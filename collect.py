@@ -2,7 +2,7 @@
 """씽크풀 라씨 매매신호 → Supabase 수집기.
 
   poll                       오늘의 매수/매도 신호 (3 request). 20분마다.
-  backfill [--full] [code…]  TR_SIGNAL07 매매이력. 코드 생략 시 오늘 목록.
+  backfill [code…]           TR_SIGNAL07 매매이력 전량. 코드 생략 시 오늘 목록.
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
 import json, os, ssl, sys, time, urllib.error, urllib.request
@@ -103,7 +103,9 @@ def poll():
     return upsert([live_row(f, x, live) for f, x in items])
 
 
-def backfill(codes, full=False):
+def backfill(codes):
+    """종목별 매매이력 전량. 페이지 0만 받으면 새 종목의 진입 매수가 잘려
+    라운드 짝짓기가 깨진다(§6). 서울 리전에선 전 페이지도 수십 초라 항상 전량."""
     rows = []
     for c in codes:
         page, name = 0, None
@@ -114,7 +116,7 @@ def backfill(codes, full=False):
             name = name or head.get("stockName") \
                 or req(f"{API}/common/codename/{c}")["stockName"]
             rows += [hist_row(c, name, r) for r in chart]
-            if not full or not chart or page + 1 >= int(chart[0]["totalPageSize"]):
+            if not chart or page + 1 >= int(chart[0]["totalPageSize"]):
                 break
             page += 1
     return upsert(rows)
@@ -159,7 +161,6 @@ if __name__ == "__main__":
         print("upserted", poll())
     elif cmd == "backfill":
         codes = [a for a in args if not a.startswith("--")]
-        print("upserted", backfill(codes or sorted({x["stockCode"] for _, x in today_codes()}),
-                                   full="--full" in args))
+        print("upserted", backfill(codes or sorted({x["stockCode"] for _, x in today_codes()})))
     else:
         sys.exit(__doc__)

@@ -22,7 +22,7 @@
 ```
 python3 collect.py check      # 네트워크 없이 변환 로직 검증
 python3 collect.py poll       # 오늘 신호 (3 request)
-python3 collect.py backfill   # 오늘 종목 최근 이력 (--full 로 전 페이지)
+python3 collect.py backfill   # 오늘 종목 매매이력 전량
 ```
 
 Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).
