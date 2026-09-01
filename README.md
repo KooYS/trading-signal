@@ -16,3 +16,24 @@
 ## 주의
 
 개인 모니터링 용도로 한정. 무단 복제·재배포 금지 고지가 있으므로 데이터 재배포/상용 활용은 별도 판단 필요. private 유지.
+
+## 수집
+
+```
+python3 collect.py check      # 네트워크 없이 변환 로직 검증
+python3 collect.py poll       # 오늘 신호 (3 request)
+python3 collect.py backfill   # 오늘 종목 최근 이력 (--full 로 전 페이지)
+```
+
+Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).
+테이블 `signal` — 스키마·설계 근거는 [`schema.sql`](schema.sql).
+
+RLS 켜져 있고 정책이 없다 = **service_role 키만 쓴다.** 레포 Settings → Secrets에 등록:
+
+- `SUPABASE_URL` = `https://fvwwxhdufcqpcyysfdgg.supabase.co`
+- `SUPABASE_KEY` = service_role 키 (대시보드 Settings → API Keys)
+
+GitHub Actions가 평일 20분마다 `poll`, KST 16:35에 `backfill` 을 돈다.
+
+라운드(B→S 한 사이클) 분석은 `signal_round` 뷰를 쓴다. 같은 날 B/S가 동시에 나는
+케이스가 20건 있고 순서가 섞여 있어서, 날짜로 lag() 짝짓기를 하면 틀린다.

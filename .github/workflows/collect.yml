@@ -1,0 +1,15 @@
+name: collect
+on:
+  schedule:
+    - cron: '3,23,43 0-7 * * 1-5'   # KST 09:03~16:43 평일. 신호가 20분 그리드라 3분 뒤에 긁는다 (정시 혼잡 회피)
+    - cron: '38 7 * * 1-5'       # KST 16:38 장마감 후 이력 보정
+  workflow_dispatch:
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 collect.py ${{ github.event.schedule == '38 7 * * 1-5' && 'backfill' || 'poll' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
