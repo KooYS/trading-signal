@@ -28,8 +28,15 @@ python3 collect.py backfill   # 오늘 종목 매매이력 전량
 python3 collect.py news       # 오늘 종목 최근 뉴스 (Google News RSS, 키 불필요)
 python3 collect.py news_backfill 2026-08   # 월 단위 뉴스 소급
 python3 collect.py fund       # 펀더멘탈 (토스). poll 이 자동으로 함께 채운다
-python3 collect.py flow       # 외국인·기관 순매매 20일치 (네이버 금융)
+python3 collect.py flow       # 외국인·기관 순매매 60일치 (토스)
+python3 collect.py price      # 일별 시세 1페이지(약 15개월)
+python3 collect.py price_backfill 20   # 일별 시세를 20페이지까지 소급
+python3 collect.py fin        # 분기 매출·순이익·영업이익 5년치
 ```
+
+`price` 는 한 번에 다 안 온다. `count` 상한이 300~499 사이고 응답의
+`nextDateTime` 을 `?from=` 으로 되돌려줘야 그 이전 구간이 온다. 1페이지가
+약 300거래일(15개월)이라 `price_backfill 20` 이면 20년 남짓이다.
 
 Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).
 테이블 `signal` — 스키마·설계 근거는 [`schema.sql`](schema.sql).
@@ -64,6 +71,19 @@ RLS가 켜져 있고 정책이 없어서 publishable 키로는 401이 난다.
 ```
 aws lambda invoke --function-name trading-signal-collect \
   --cli-binary-format raw-in-base64-out --payload '{"cmd":"backfill"}' /dev/stdout
+```
+
+로컬이 없으면 **Actions → lambda → Run workflow** 로 배포·실행한다.
+Secrets 에 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` 가 필요하다
+(`lambda:UpdateFunctionCode` 와 `lambda:InvokeFunction` 만 있으면 된다).
+
+**`price_backfill` 은 한 번에 안 끝난다.** 189종목 × 20페이지 ≈ 3,780요청 ≈ 19분인데
+람다 하드 상한이 15분이다. `batches` 를 10 정도로 주면 워크플로가 조각내어
+여러 번 부른다. 조각은 연속 구간이 아니라 stride 로 나뉘어 크기가 고르다.
+
+```
+{"cmd":"price_backfill","batches":10,"batch":3,"pages":20}
+{"cmd":"fin","codes":["005930","000660"]}
 ```
 
 ## 화면

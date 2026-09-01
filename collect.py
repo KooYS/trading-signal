@@ -7,6 +7,9 @@
   news_backfill YYYY-MM…     해당 월의 신호 종목 뉴스를 월 단위로 소급 수집.
   fund [code…]               오늘 신호 종목의 펀더멘탈 (토스증권). 하루 1행 스냅샷.
   flow [code…]               개인·외국인·기관 순매매 60일치 (토스증권).
+  price [code…]              일별 시세 1페이지(약 15개월). 토스 c-chart.
+  price_backfill [N] [code…] 일별 시세를 N페이지까지 소급. 1페이지 ≈ 300거래일.
+  fin [code…]                분기 매출·순이익·영업이익 5년치 (토스증권).
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
 import hashlib, json, os, re, ssl, sys, time, urllib.error, urllib.parse
@@ -357,6 +360,109 @@ def flow(codes, size=60):
     return upsert(rows, "flow", "stock_code,trade_date")
 
 
+def price_rows(code, candles):
+    """c-chart 캔들 → price 행. 한 건이
+    {dt, base, open, high, low, close, volume, amount} 로 온다(실측)."""
+    return [{"stock_code": code, "trade_date": c["dt"][:10],
+             "open_price": c.get("open"), "high_price": c.get("high"),
+             "low_price": c.get("low"), "close_price": c.get("close"),
+             "base_price": c.get("base"),          # 기준가(전일 종가)
+             "volume": c.get("volume"), "amount": c.get("amount")}
+            for c in candles if c.get("dt")]
+
+
+def price(codes, pages=1, count=300):
+    """일별 시세. 한 번에 다 안 온다 — count 상한이 300~499 사이고(300 OK, 500은 400),
+    응답의 nextDateTime 을 ?from= 으로 되돌려줘야 그 이전 구간이 온다.
+    pages 만큼 커서를 돌린다. 1페이지 ≈ 300거래일 ≈ 15개월."""
+    rows, fail = [], []
+    for c in codes:
+        cur = None
+        try:
+            for _ in range(pages):
+                q = f"count={count}"
+                if cur:
+                    q += "&from=" + urllib.parse.quote(cur)
+                r = req(f"{TOSS}/v1/c-chart/kr-s/A{c}/day:1?{q}",
+                        headers={"User-Agent": H["User-Agent"]})["result"]
+                got = r.get("candles") or []
+                rows += price_rows(c, got)
+                cur = r.get("nextDateTime")
+                if not got or not cur:            # 상장 시점까지 내려갔다
+                    break
+                time.sleep(0.2)
+        except Exception as e:
+            fail.append((c, str(e)[:50]))
+        time.sleep(0.2)
+    if fail:
+        print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
+    return upsert(rows, "price", "stock_code,trade_date")
+
+
+_OPI_KEYS_SEEN = []
+
+
+def _operating(x):
+    """영업이익 값. revenue-and-net-profit 은 필드명을 실측했지만
+    operating-income 쪽은 아직 못 했다. 아는 이름을 먼저 보고, 없으면
+    operating 이 들어간 숫자 필드를 집되 비율·성장률·환산액은 뺀다.
+    처음 한 번 관측된 키를 찍어두면 다음 커밋에서 못 박을 수 있다."""
+    for n in ("operatingIncome", "operatingProfit"):
+        if isinstance(x.get(n), (int, float)):
+            return x[n]
+    if not _OPI_KEYS_SEEN:
+        _OPI_KEYS_SEEN.append(sorted(x))
+        print(f"  operating-income 키 미실측: {sorted(x)}", file=sys.stderr)
+    for k, v in x.items():
+        kl = k.lower()
+        if (isinstance(v, (int, float)) and "operating" in kl
+                and not any(a in kl for a in ("ratio", "growth", "krw", "jpy"))):
+            return v
+    return None
+
+
+def fin_rows(code, rev, opi):
+    """분기 실적 → financials 행. 두 엔드포인트 모두 table[] 에
+    {period: 'YYYY-MM', ...} 로 분기별로 온다. period 로 합친다."""
+    out = {}
+    for x in (rev or {}).get("table") or []:
+        p = x.get("period")
+        if p:
+            out[p] = {"stock_code": code, "period": p,
+                      "revenue": x.get("revenue"),
+                      "net_profit": x.get("netProfit"),
+                      "net_profit_ratio": x.get("netProfitRatio"),
+                      "net_profit_growth": x.get("netProfitGrowthRatio")}
+    for x in (opi or {}).get("table") or []:
+        p = x.get("period")
+        if p:
+            out.setdefault(p, {"stock_code": code, "period": p})
+            out[p]["operating_income"] = _operating(x)
+    return list(out.values())
+
+
+def fin(codes, years=5):
+    """분기 매출·순이익·영업이익. 본문 {"range": 5} 로 5년(20분기)까지 온다.
+    기본은 3년이라 반드시 실어 보내야 한다(실측)."""
+    body = {"range": years}
+    rows, fail = [], []
+    hdr = {"User-Agent": H["User-Agent"], "Content-Type": "application/json"}
+    for c in codes:
+        try:
+            rev = req(f"{TOSS}/v2/stock-infos/revenue-and-net-profit/A{c}",
+                      body, headers=hdr)["result"]
+            time.sleep(0.2)
+            opi = req(f"{TOSS}/v2/stock-infos/operating-income/A{c}",
+                      body, headers=hdr)["result"]
+            rows += fin_rows(c, rev, opi)
+        except Exception as e:
+            fail.append((c, str(e)[:50]))
+        time.sleep(0.2)
+    if fail:
+        print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
+    return upsert(rows, "financials", "stock_code,period")
+
+
 def check():
     live = {"457190": {"stockCode": "457190", "tradeDate": "20260831",
                        "tradeTime": "142000", "tradePrice": "69450", "profitRate": "-0.79"}}
@@ -375,24 +481,65 @@ def check():
     assert hist_row("0117P0", "피스피스스튜디오",
                     {"tf": "S", "td": "20260901", "tp": "5570", "pr": "2.96"}
                     )["stock_name"] == "피스피스스튜디오"
+    # 일별 시세 — 실측한 캔들 한 건 그대로
+    pr = price_rows("005930", [{"dt": "2026-09-01T00:00:00+09:00", "base": 260000,
+                                "open": 259500, "high": 262500, "low": 254000,
+                                "close": 255000, "volume": 23436082,
+                                "amount": 6069687118000}])[0]
+    assert pr["trade_date"] == "2026-09-01" and pr["close_price"] == 255000, pr
+    assert pr["base_price"] == 260000 and pr["amount"] == 6069687118000, pr
+    assert not price_rows("x", [{"close": 1}])          # dt 없는 건 버린다
+    # 분기 실적 — 매출·순이익은 실측 필드, 영업이익은 이름을 집어낸다
+    f = fin_rows("005930",
+                 {"table": [{"period": "2023-09", "revenue": 67404652000000,
+                             "netProfit": 5844171000000, "netProfitRatio": 8.67,
+                             "netProfitGrowthRatio": 239.07}]},
+                 {"table": [{"period": "2023-09", "operatingIncome": 2433500000000,
+                             "operatingIncomeRatio": 3.61}]})
+    assert len(f) == 1 and f[0]["revenue"] == 67404652000000, f
+    assert f[0]["operating_income"] == 2433500000000, f      # 비율을 집으면 안 된다
+    g = fin_rows("x", {"table": [{"period": "2024-03", "revenue": 1}]},
+                 {"table": [{"period": "2024-03", "operatingIncomeKrw": 9,
+                             "someOperatingValue": 7}]})     # 이름 미상 → 환산액은 제외
+    assert g[0]["operating_income"] == 7, g
     print("check ok")
+
+
+def event_codes(event):
+    """람다 페이로드에서 대상 종목을 고른다.
+
+    price_backfill 은 189종목 × 20페이지 ≈ 3,780요청 ≈ 19분이라 람다 하드
+    상한(15분)을 넘는다. batches/batch 로 쪼개 여러 번 부른다. 균등하게
+    나뉘도록 연속 구간이 아니라 stride 로 자른다.
+
+      {"cmd":"price_backfill","batches":10,"batch":3,"pages":20}
+      {"cmd":"fin","codes":["005930","000660"]}
+    """
+    ev = event or {}
+    codes = sorted({x["stockCode"] for _, x in today_codes()})
+    if ev.get("codes"):
+        want = set(ev["codes"])
+        return [c for c in codes if c in want]
+    n = int(ev.get("batches", 1))
+    return codes[int(ev.get("batch", 0)) % n::n] if n > 1 else codes
 
 
 def lambda_handler(event, _context):
     # thinkpool이 해외 IP를 막아서 서울(ap-northeast-2)에서 돈다. §7 참고
-    cmd = (event or {}).get("cmd", "poll")
-    if cmd == "backfill":
-        return {"cmd": cmd, "upserted": backfill(
-            sorted({x["stockCode"] for _, x in today_codes()}))}
-    if cmd == "flow":
-        return {"cmd": cmd, "upserted": flow(
-            sorted({x["stockCode"] for _, x in today_codes()}))}
-    if cmd == "fund":
-        return {"cmd": cmd, "upserted": fund(
-            sorted({x["stockCode"] for _, x in today_codes()}))}
+    ev = event or {}
+    cmd = ev.get("cmd", "poll")
+    if cmd in ("backfill", "flow", "fund", "price", "price_backfill", "fin"):
+        codes = event_codes(ev)
+        fn = {"backfill": backfill, "flow": flow, "fund": fund, "fin": fin}.get(cmd)
+        if fn:
+            return {"cmd": cmd, "codes": len(codes), "upserted": fn(codes)}
+        pages = int(ev.get("pages", 20)) if cmd == "price_backfill" else 1
+        return {"cmd": cmd, "codes": len(codes), "upserted": price(codes, pages=pages)}
     if cmd == "news":
+        want = set(event_codes(ev))
         return {"cmd": cmd, "upserted": news(
-            sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()}))}
+            sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()
+                    if x["stockCode"] in want}))}
     return {"cmd": cmd, **poll()}
 
 
@@ -415,6 +562,17 @@ if __name__ == "__main__":
     elif cmd == "news":
         pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
         print("upserted", news([p for p in pairs if not args or p[0] in args]))
+    elif cmd == "price":
+        codes = sorted({x["stockCode"] for _, x in today_codes()})
+        print("upserted", price([c for c in codes if not args or c in args]))
+    elif cmd == "price_backfill":
+        pages = int(args[0]) if args and args[0].isdigit() else 20
+        rest = [a for a in args[1:] if not a.startswith("--")]
+        codes = sorted({x["stockCode"] for _, x in today_codes()})
+        print("upserted", price(rest or codes, pages=pages))
+    elif cmd == "fin":
+        codes = sorted({x["stockCode"] for _, x in today_codes()})
+        print("upserted", fin([c for c in codes if not args or c in args]))
     elif cmd == "news_backfill":
         pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
         print("upserted", news_backfill(pairs, args or [time.strftime("%Y-%m")]))

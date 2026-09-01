@@ -124,6 +124,43 @@ alter table fundamental add column if not exists market text;
 --    최신을 붙이면 내일 오늘 신호가 내일 지표로 점수 매겨져 과거 검증이 불가능해진다.
 --    전체 정의는 Supabase 마이그레이션 fix_asof_join_and_add_flow_v2 참조.
 
+-- 일별 시세 (토스 c-chart). 스펙: docs/toss-invest-api.md
+-- flow 는 60일치뿐이라 소급 검증이 안 됐다. 이건 그 한계를 푸는 테이블이다.
+-- ⚠️ 한 번에 다 안 온다. count 상한이 300~499 사이(300 OK, 500은 400)고,
+--    응답의 nextDateTime 을 ?from= 으로 되돌려줘야 그 이전 구간이 온다.
+create table if not exists price (
+  stock_code   text not null,
+  trade_date   date not null,
+  open_price   integer, high_price integer, low_price integer, close_price integer,
+  base_price   integer,               -- 기준가(전일 종가)
+  volume       bigint,
+  amount       bigint,                -- 거래대금(원)
+  collected_at timestamptz not null default now(),
+  primary key (stock_code, trade_date)
+);
+create index if not exists price_code_date_idx on price (stock_code, trade_date desc);
+create index if not exists price_date_idx      on price (trade_date desc);
+alter table price enable row level security;
+
+-- 분기 실적 (토스). 본문 {"range": 5} 로 5년 20분기. 기본이 3년이라 반드시 실어야 한다.
+-- 매수 밴드용이다. 지금 buy_ranked 의 밸류 축은 전 종목 공통 절대기준
+-- (PBR<=0.5 → 25점)이라 철강주와 바이오를 같은 자로 잰다. 그래서 국면 따라
+-- 부호가 뒤집혔다(6·7월 상관 +0.271 / 8월 +0.059). '이 종목의 자기 이력 대비
+-- 지금 어디인가' 를 재려면 이 시계열이 있어야 한다.
+create table if not exists financials (
+  stock_code        text not null,
+  period            text not null,     -- 분기말 'YYYY-MM'
+  revenue           bigint,            -- 매출(원)
+  net_profit        bigint,            -- 순이익(원)
+  net_profit_ratio  numeric(12,4),     -- 순이익률(%)
+  net_profit_growth numeric(14,4),     -- 순이익 증감률(%)
+  operating_income  bigint,            -- 영업이익(원)
+  collected_at      timestamptz not null default now(),
+  primary key (stock_code, period)
+);
+create index if not exists financials_code_idx on financials (stock_code, period desc);
+alter table financials enable row level security;
+
 -- 화면용 단일 JSON: page_live. 정의는 Supabase 마이그레이션
 -- page_live_add_closed_rounds_and_buy_context 참조.
 --   buys/sells   = trade_date = current_date (하루만 산다)
