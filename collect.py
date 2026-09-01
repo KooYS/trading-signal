@@ -140,7 +140,9 @@ def hist_row(code, name, r):
 def all_codes():
     """신호에 한 번이라도 등장한 전 종목. 오늘 목록(today_codes)과 달리
     과거 검증용이다 — 공시·시세를 과거 라운드에 붙이려면 이쪽이 필요하다."""
-    return sorted(x["stock_code"] for x in sb_get("signal_stock?select=stock_code"))
+    # PostgREST 는 limit 을 안 주면 1000행에서 자른다. 지금 189종목이지만 늘어난다
+    return sorted(x["stock_code"]
+                  for x in sb_get("signal_stock?select=stock_code&limit=5000"))
 
 
 def today_codes():
@@ -548,6 +550,21 @@ def dart_corp():
     return upsert(rows, "dart_corp", "corp_code")
 
 
+def corp_map(codes):
+    """필요한 종목만 골라 받는다.
+
+    대응표를 통째로 읽으면 PostgREST 기본 상한(1000행)에 조용히 잘린다.
+    3,988행 중 앞부분만 와서 189종목 중 173개가 '미등록' 으로 빠졌었다.
+    limit 을 키우는 대신 필요한 것만 집으면 표가 커져도 안 깨진다."""
+    out = {}
+    for i in range(0, len(codes), 100):          # URL 길이 때문에 100개씩
+        chunk = ",".join(codes[i:i + 100])
+        for r in sb_get(f"dart_corp?select=stock_code,corp_code"
+                        f"&stock_code=in.({chunk})&limit=200"):
+            out[r["stock_code"]] = r["corp_code"]
+    return out
+
+
 def disclosure_row(code, corp_code, x):
     """DART list.json 항목 → disclosure 행.
 
@@ -566,8 +583,7 @@ def disclosure(codes, since="20190101", until=None, pages=20):
     010·011 키 문제 / 100 파라미터 오류 / 800 점검."""
     key = os.environ["DART_KEY"]
     until = until or time.strftime("%Y%m%d")
-    corp = {r["stock_code"]: r["corp_code"]
-            for r in sb_get("dart_corp?select=stock_code,corp_code")}
+    corp = corp_map(codes)
     rows, fail, skip = [], [], []
     for c in codes:
         cc = corp.get(c)
@@ -595,7 +611,7 @@ def disclosure(codes, since="20190101", until=None, pages=20):
             fail.append((c, str(e)[:60]))
         time.sleep(0.1)
     if skip:
-        print(f"  DART 미등록 {len(skip)}종목(ETF 등): {skip[:5]}", file=sys.stderr)
+        print(f"  대응표에 없음 {len(skip)}종목(ETF·리츠 등): {skip[:5]}", file=sys.stderr)
     if fail:
         print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
     return upsert(rows, "disclosure", "rcept_no")
