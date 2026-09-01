@@ -127,6 +127,13 @@ def poll():
         live.update({d["stockCode"]: d
                      for d in tr("TR_SIGNAL21", list_Stock=codes[i:i + 100])})
     n = upsert([live_row(f, x, live) for f, x in items])
+    # 미청산 보유 종목도 포함한다. 오늘 신호에 없다고 빼면 어제 산 종목의
+    # 현재가·수급이 비어 추적 화면이 깨진다.
+    try:
+        codes = sorted(set(codes) | {r["stock_code"] for r in
+                       sb_get("open_position?select=stock_code&limit=2000")})
+    except Exception as e:
+        print(f"open_position skipped: {e}", file=sys.stderr)
     # 펀더멘탈·수급은 하루 1행이면 충분하다. 아직 없는 종목만 채우면
     # 그날 첫 폴링이 전부 긁고 이후엔 신규 편입분만 몇 건 붙는다.
     out = {"signals": n}
