@@ -101,6 +101,23 @@ aws lambda invoke --function-name trading-signal-collect \
 하위 테이블의 RLS를 우회하고, publishable(공개) 키로 데이터가 통째로 읽힌다.
 실제로 그 상태였고 이 커밋에서 막았다.
 
+### 배포 — Vercel Git 연동
+
+`main` 에 푸시되면 Vercel 이 알아서 올린다. 저장소에 워크플로 파일은 없다 —
+Vercel 대시보드에서 `KooYS/trading-signal` 을 붙여둔 것이고, 설정은 거기에만 있다.
+
+| 설정 | 값 |
+|---|---|
+| Root Directory | `web` — 저장소 루트엔 `index.html` 이 없다 |
+| Production Branch | `main` |
+| 프로젝트 | `trading-signal` (팀 AMP) |
+
+**연동만으로는 배포가 안 뜬다.** 붙인 시점의 HEAD 를 소급해서 올리지 않고
+다음 푸시부터 돈다. 지금 당장 올리려면 아무 커밋이나 `main` 에 넣거나
+CLI 를 쓴다.
+
 ```
 vercel deploy --prod        # web/ 에서
 ```
+
+`.vercel/` 은 커밋하지 않는다(로컬 링크 정보).
