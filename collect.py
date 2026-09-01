@@ -182,10 +182,16 @@ def news_rows(code, name, xml):
     return rows
 
 
-def fetch_news(name, window=None):
+def fetch_news(name, code, window=None):
     """window = (after, before) 'YYYY-MM-DD'. 없으면 최신 100건.
-    RSS는 100건 하드캡이고 start/num을 무시한다 → 날짜창을 쪼개서 소급한다."""
-    q = name if not window else f"{name} after:{window[0]} before:{window[1]}"
+    RSS는 100건 하드캡이고 start/num을 무시한다 → 날짜창을 쪼개서 소급한다.
+
+    종목코드를 반드시 함께 넣는다. 종목명만 쓰면 동명이인이 섞인다 —
+    '서연'(007860)으로 검색하면 아이돌 기사 100건이 통째로 들어왔다.
+    재현율은 줄지만(삼호개발 100→24건) 틀린 근거보다 적은 근거가 낫다."""
+    q = f"{name} {code}"
+    if window:
+        q += f" after:{window[0]} before:{window[1]}"
     url = f"{GNEWS}?q={urllib.parse.quote(q)}&hl=ko&gl=KR&ceid=KR:ko"
     return req(url, headers={"User-Agent": H["User-Agent"]}, raw=True)
 
@@ -193,7 +199,7 @@ def fetch_news(name, window=None):
 def news(codes_names):
     rows = []
     for code, name in codes_names:
-        rows += news_rows(code, name, fetch_news(name))
+        rows += news_rows(code, name, fetch_news(name, code))
         time.sleep(0.3)                      # ponytail: 구글에 대한 최소한의 예의
     return upsert(rows, "news", "stock_code,guid_hash")
 
@@ -206,7 +212,7 @@ def news_backfill(codes_names, months):
         after = f"{y}-{m:02d}-01"
         before = f"{y + (m == 12)}-{(m % 12) + 1:02d}-01"
         for code, name in codes_names:
-            rows += news_rows(code, name, fetch_news(name, (after, before)))
+            rows += news_rows(code, name, fetch_news(name, code, (after, before)))
             time.sleep(0.3)
     return upsert(rows, "news", "stock_code,guid_hash")
 
@@ -258,6 +264,7 @@ def fund_row(code, today):
         "div_yield": _num(_dig(ind, "배당", "dividendYieldRatio")),
         "market_cap": pr.get("marketCap"), "close_price": pr.get("close"),
         "high_52w": pr.get("high52w"), "low_52w": pr.get("low52w"),
+        "market": ((ov.get("market") or {}).get("displayName")),
         "industry": (co.get("industry") or {}).get("displayName"),
         "ceo": co.get("ceo"), "listed_on": co.get("listDate"),
         "shares_out": co.get("sharesOutstanding"), "sales_mix": mix,

@@ -98,7 +98,40 @@ AWS 서울(`3.36.72.238`, AS16509 Amazon) 에서 **6종목 연속 요청 전부 
 
 > 장기 대량 수집 시 429가 뜰 가능성은 남아 있다. 재시도/백오프는 필수.
 
-## 5. 노이즈 — 세 종류
+## 5. 종목명만 쓰면 안 된다 ★ (동명이인 사고)
+
+**검색어는 `"{종목명} {종목코드}"` 로 고정한다.** 종목명만 쓰면 전혀 다른 대상이 들어온다.
+
+실제로 겪은 사고 — `서연`(007860)으로 수집했더니 **아이돌 "튜이드 서연" 기사 100건**이 통째로
+저장됐고, 대시보드에서 "근거 있는 신호"로 표시됐다.
+
+```
+서연            → 튜이드 서연(아이돌), 공서연(사건) …  회사 기사 0건
+"서연" 주가      → 서연이화 · 서연탑메탈  ← 같은 그룹의 다른 상장사. 더 위험하다
+서연 코스피 자동차 → 거의 전부 서연이화
+서연 007860     → 전부 서연(007860) 본인 ✅
+```
+
+그룹 계열사가 섞이는 게 아이돌보다 위험하다. 그럴듯해서 안 걸러진다.
+
+### 코드를 붙이면 기사를 잃지 않나?
+
+**잃는 게 아니라 다르게 고른다.** RSS는 100건 캡이고, 구글은 코드를 AND 조건이 아니라
+**랭킹 힌트**로 쓴다. 그래서 이름이 명확한 종목은 거의 안 깎이고, 모호할 때만 강하게 작동한다.
+
+| 종목 | 이름만 | 코드 병기 | 제목 교집합 |
+|---|---|---|---|
+| SK텔레콤 (017670) | 97 | **95** | 9 |
+| 디어유 (376300) | 95 | **88** | 36 |
+| 카카오게임즈 (293490) | 97 | **92** | 15 |
+| 삼호개발 (010960) | 98 | **23** | 20 |
+| 서연 (007860) | 97 | **17** | **0** |
+
+교집합이 낮은 건 두 쿼리가 **수천 건 풀에서 서로 다른 100건씩**을 가져오기 때문이다.
+SK텔레콤은 코드 병기로도 "SKT 에어 20만명 돌파", "SKT AI로 통신망 훑는다" 같은
+핵심 기사가 그대로 나온다. 종목당 17~95건이면 신호 근거 판단엔 충분하다.
+
+## 6. 노이즈 — 세 종류
 
 실측에서 관측된 패턴이다. **원문을 그대로 저장하고 필터는 나중에** 하는 게 맞다(재수집 불필요).
 
@@ -118,12 +151,12 @@ AWS 서울(`3.36.72.238`, AS16509 Amazon) 에서 **6종목 연속 요청 전부 
 - **시세 봇** → `source`가 톱스타뉴스·중앙이코노미뉴스 등으로 몰린다. 제목에 `주가,`·`상승 마감` 패턴.
 - **나열 기사** → 제목에 날짜+`주요공시`, `종목`, `選`, `[52주]` 등. 본문이 없어 판별은 제목 의존.
 
-## 6. 우리 구현
+## 7. 우리 구현
 
 `collect.py`:
 
 ```
-python3 collect.py news                      # 오늘 신호 종목 최근 100건
+python3 collect.py news                      # 오늘 신호 종목 최근 100건 (코드 병기)
 python3 collect.py news_backfill 2026-08     # 해당 월 창으로 소급
 python3 collect.py news_backfill 2026-06 2026-07 2026-08
 ```
@@ -132,7 +165,7 @@ python3 collect.py news_backfill 2026-06 2026-07 2026-08
 
 | 함수 | 역할 |
 |---|---|
-| `fetch_news(name, window=None)` | RSS 원문(bytes). `window=(after, before)` |
+| `fetch_news(name, code, window=None)` | RSS 원문(bytes). 검색어는 `"{name} {code}"` |
 | `news_rows(code, name, xml)` | XML → DB 행. `pubDate` RFC822 파싱, `guid` md5 |
 | `news(codes_names)` | 최신 수집 → upsert |
 | `news_backfill(codes_names, months)` | 월 창 반복 → upsert |
@@ -146,7 +179,7 @@ published_at timestamptz              -- pubDate를 UTC로
 src_api      'gnews'                  -- 나중에 네이버를 섞을 때 구분
 ```
 
-## 7. 다른 곳에서 쓸 때 — 최소 예제
+## 8. 다른 곳에서 쓸 때 — 최소 예제
 
 의존성 없는 순수 stdlib:
 
@@ -155,8 +188,10 @@ import urllib.request, urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
-def gnews(query, after=None, before=None):
-    q = query + (f" after:{after} before:{before}" if after else "")
+def gnews(name, code, after=None, before=None):
+    q = f"{name} {code}"                     # 코드 병기 필수 — §5 동명이인 사고
+    if after:
+        q += f" after:{after} before:{before}"
     url = ("https://news.google.com/rss/search"
            f"?q={urllib.parse.quote(q)}&hl=ko&gl=KR&ceid=KR:ko")
     r = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -176,18 +211,19 @@ def gnews(query, after=None, before=None):
     return out
 
 # 최신 100건
-gnews("지엔씨에너지")
+gnews("지엔씨에너지", "119850")
 # 2024년 3월치만
-gnews("지엔씨에너지", "2024-03-01", "2024-04-01")
+gnews("지엔씨에너지", "119850", "2024-03-01", "2024-04-01")
 ```
 
-주의 세 가지만 기억하면 된다:
+주의 네 가지만 기억하면 된다:
 
-1. **100건 캡** — 넘기려면 `after`/`before`로 창을 쪼갤 것
-2. **`link`는 원본 URL이 아니다** — `news.google.com` 리다이렉트. 원본이 필요하면 따라가야 함
-3. **요약 텍스트 없음** — `description`은 빈 껍데기. 제목이 전부
+1. **검색어에 종목코드를 반드시 붙일 것** — 종목명만 쓰면 동명이인·계열사가 섞인다 (§5)
+2. **100건 캡** — 넘기려면 `after`/`before`로 창을 쪼갤 것
+3. **`link`는 원본 URL이 아니다** — `news.google.com` 리다이렉트. 원본이 필요하면 따라가야 함
+4. **요약 텍스트 없음** — `description`은 빈 껍데기. 제목이 전부
 
-## 8. 네이버 검색 API와 비교
+## 9. 네이버 검색 API와 비교
 
 둘 다 쓸 수 있고 서로를 보완한다. 우리는 소급 범위 때문에 gnews를 택했다.
 
