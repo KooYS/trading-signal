@@ -11,9 +11,11 @@
   price [code…]              일별 시세 1페이지(약 15개월). 토스 c-chart.
   price_backfill [N] [code…] 일별 시세를 N페이지까지 소급. 1페이지 ≈ 300거래일.
   fin [code…]                분기 매출·순이익·영업이익 5년치 (토스증권).
+  dart_corp                  DART corp_code ↔ 종목코드 대응표. disclosure 전에 1회.
+  disclosure [--all|code…]   DART 공시 목록. 기본 2019-01-01 이후.
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
-import hashlib, json, os, re, ssl, sys, time, urllib.error, urllib.parse
+import hashlib, io, json, os, re, ssl, sys, time, urllib.error, urllib.parse, zipfile
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -28,6 +30,7 @@ API = "https://api.thinkpool.com"
 GNEWS = "https://news.google.com/rss/search"
 TOSS = "https://wts-info-api.tossinvest.com/api"
 RASSI = "https://rassiapp.thinkpool.com:47700/rassi_ext"
+DART = "https://opendart.fss.or.kr/api"
 H = {"Origin": "https://www.thinkpool.com", "User-Agent": "Mozilla/5.0",
      "Content-Type": "application/json", "Accept": "application/json"}
 
@@ -132,6 +135,12 @@ def hist_row(code, name, r):
             "trade_date": _d(r["td"]), "trade_flag": r["tf"],
             "trade_price": int(r["tp"]),
             "profit_rate": float(r["pr"]) if r.get("pr") else None}
+
+
+def all_codes():
+    """신호에 한 번이라도 등장한 전 종목. 오늘 목록(today_codes)과 달리
+    과거 검증용이다 — 공시·시세를 과거 라운드에 붙이려면 이쪽이 필요하다."""
+    return sorted(x["stock_code"] for x in sb_get("signal_stock?select=stock_code"))
 
 
 def today_codes():
@@ -518,6 +527,80 @@ def fin(codes, years=5):
     return upsert(rows, "financials", "stock_code,period")
 
 
+def dart_corp():
+    """stock_code → corp_code 표.
+
+    DART 는 6자리 종목코드로 조회가 안 되고 자기 8자리 corp_code 만 받는다.
+    그 대응표가 corpCode.xml 인데 ZIP 으로 온다. 비상장사는 stock_code 가
+    빈 문자열이라 버린다(전체 10만여 건 중 상장사는 4천 안쪽)."""
+    key = os.environ["DART_KEY"]
+    blob = req(f"{DART}/corpCode.xml?crtfc_key={key}",
+               headers={"User-Agent": H["User-Agent"]}, raw=True)
+    with zipfile.ZipFile(io.BytesIO(blob)) as z:
+        xml = z.read(z.namelist()[0])
+    rows = []
+    for el in ET.fromstring(xml).iter("list"):
+        code = (el.findtext("stock_code") or "").strip()
+        if code:
+            rows.append({"corp_code": (el.findtext("corp_code") or "").strip(),
+                         "stock_code": code,
+                         "corp_name": (el.findtext("corp_name") or "").strip()})
+    return upsert(rows, "dart_corp", "corp_code")
+
+
+def disclosure_row(code, corp_code, x):
+    """DART list.json 항목 → disclosure 행.
+
+    report_nm 을 날것 그대로 둔다. 호재·악재 분류는 뷰에서 한다 —
+    분류 기준을 바꿀 때마다 다시 긁고 싶지 않다."""
+    return {"rcept_no": x["rcept_no"], "stock_code": code, "corp_code": corp_code,
+            "rcept_dt": _d(x["rcept_dt"]), "report_nm": x.get("report_nm"),
+            "flr_nm": x.get("flr_nm"), "corp_cls": x.get("corp_cls"),
+            "rm": x.get("rm") or None}
+
+
+def disclosure(codes, since="20190101", until=None, pages=20):
+    """공시 목록. 뉴스와 달리 유형이 제목에 박혀 있어 호재·악재를 가를 수 있다.
+
+    상태코드: 000 정상 / 013 데이터 없음 / 020 요청한도 초과(일 2만) /
+    010·011 키 문제 / 100 파라미터 오류 / 800 점검."""
+    key = os.environ["DART_KEY"]
+    until = until or time.strftime("%Y%m%d")
+    corp = {r["stock_code"]: r["corp_code"]
+            for r in sb_get("dart_corp?select=stock_code,corp_code")}
+    rows, fail, skip = [], [], []
+    for c in codes:
+        cc = corp.get(c)
+        if not cc:                      # ETF·리츠는 DART 에 없다
+            skip.append(c)
+            continue
+        try:
+            for page in range(1, pages + 1):
+                r = req(f"{DART}/list.json?crtfc_key={key}&corp_code={cc}"
+                        f"&bgn_de={since}&end_de={until}"
+                        f"&page_no={page}&page_count=100",
+                        headers={"User-Agent": H["User-Agent"]})
+                st = r.get("status")
+                if st == "013":                       # 이 기간 공시 없음
+                    break
+                if st == "020":
+                    raise RuntimeError("DART 일일 한도 초과(2만건)")
+                if st != "000":
+                    raise RuntimeError(f'{st} {r.get("message")}')
+                rows += [disclosure_row(c, cc, x) for x in r.get("list") or []]
+                if page >= int(r.get("total_page") or 1):
+                    break
+                time.sleep(0.1)
+        except Exception as e:
+            fail.append((c, str(e)[:60]))
+        time.sleep(0.1)
+    if skip:
+        print(f"  DART 미등록 {len(skip)}종목(ETF 등): {skip[:5]}", file=sys.stderr)
+    if fail:
+        print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
+    return upsert(rows, "disclosure", "rcept_no")
+
+
 def check():
     live = {"457190": {"stockCode": "457190", "tradeDate": "20260831",
                        "tradeTime": "142000", "tradePrice": "69450", "profitRate": "-0.79"}}
@@ -569,6 +652,13 @@ def check():
     nan, inf = float("nan"), float("inf")
     fx = _finite([{"a": nan, "b": inf, "c": -inf, "d": 1.5, "e": None, "f": "x"}])[0]
     assert fx == {"a": None, "b": None, "c": None, "d": 1.5, "e": None, "f": "x"}, fx
+    d = disclosure_row("005930", "00126380",
+                       {"corp_code": "00126380", "corp_name": "삼성전자",
+                        "stock_code": "005930", "corp_cls": "Y",
+                        "report_nm": "단일판매ㆍ공급계약체결", "rcept_no": "20260901000123",
+                        "flr_nm": "삼성전자", "rcept_dt": "20260901", "rm": ""})
+    assert d["rcept_dt"] == "2026-09-01" and d["rcept_no"] == "20260901000123", d
+    assert d["report_nm"] == "단일판매ㆍ공급계약체결" and d["rm"] is None, d   # 빈 비고는 null
     print("check ok")
 
 
@@ -606,6 +696,11 @@ def lambda_handler(event, _context):
             return {"cmd": cmd, "codes": len(codes), "upserted": fn(codes)}
         pages = int(ev.get("pages", 20)) if cmd == "price_backfill" else 1
         return {"cmd": cmd, "codes": len(codes), "upserted": price(codes, pages=pages)}
+    if cmd == "dart_corp":
+        return {"cmd": cmd, "upserted": dart_corp()}
+    if cmd == "disclosure":
+        codes = ev.get("codes") or all_codes()
+        return {"cmd": cmd, "codes": len(codes), "upserted": disclosure(codes)}
     if cmd == "news":
         want = set(event_codes(ev))
         return {"cmd": cmd, "upserted": news(
@@ -633,6 +728,13 @@ if __name__ == "__main__":
     elif cmd == "news":
         pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
         print("upserted", news([p for p in pairs if not args or p[0] in args]))
+    elif cmd == "dart_corp":
+        print("upserted", dart_corp())
+    elif cmd == "disclosure":
+        rest = [a for a in args if not a.startswith("--")]
+        codes = rest or (all_codes() if "--all" in args or not rest
+                         else sorted({x["stockCode"] for _, x in today_codes()}))
+        print("upserted", disclosure(codes))
     elif cmd == "flow_backfill":
         pages = int(args[0]) if args and args[0].isdigit() else 25
         rest = [a for a in args[1:] if not a.startswith("--")]

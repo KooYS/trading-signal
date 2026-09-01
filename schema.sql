@@ -162,6 +162,41 @@ create table if not exists financials (
 create index if not exists financials_code_idx on financials (stock_code, period desc);
 alter table financials enable row level security;
 
+-- 신호에 한 번이라도 등장한 종목. 오늘 목록(today_codes)과 달리 과거 검증용이다.
+create or replace view signal_stock as
+select stock_code, max(stock_name) as stock_name,
+       min(trade_date) as first_date, max(trade_date) as last_date, count(*) as signals
+from signal group by stock_code;
+
+-- DART corp_code ↔ 종목코드. DART 는 6자리 종목코드로 조회가 안 되고
+-- 자기 8자리 corp_code 만 받는다. 대응표가 corpCode.xml 인데 ZIP 으로 온다.
+create table if not exists dart_corp (
+  corp_code    text primary key,
+  stock_code   text,
+  corp_name    text,
+  collected_at timestamptz not null default now()
+);
+create index if not exists dart_corp_stock_idx on dart_corp (stock_code);
+alter table dart_corp enable row level security;
+
+-- 공시. 구글뉴스로는 호재·악재가 같은 +1 로 세어져서 '공시 소재' 가설을
+-- 잴 수 없었다. 공시는 유형이 제목에 박혀 있어 부호를 가를 수 있다.
+-- ⚠️ report_nm 을 날것으로 둔다. 분류는 뷰에서 — 기준을 바꿀 때마다 재수집하지 않으려고.
+create table if not exists disclosure (
+  rcept_no     text primary key,     -- 접수번호. 공시 1건 1행
+  stock_code   text not null,
+  corp_code    text,
+  rcept_dt     date not null,
+  report_nm    text not null,        -- 공시 제목
+  flr_nm       text,                 -- 제출인
+  corp_cls     text,                 -- Y 유가 / K 코스닥 / N 코넥스 / E 기타
+  rm           text,                 -- 비고(정정·첨부 등)
+  collected_at timestamptz not null default now()
+);
+create index if not exists disclosure_code_dt_idx on disclosure (stock_code, rcept_dt desc);
+create index if not exists disclosure_dt_idx      on disclosure (rcept_dt desc);
+alter table disclosure enable row level security;
+
 -- 화면용 단일 JSON: page_live. 정의는 Supabase 마이그레이션
 -- page_live_add_closed_rounds_and_buy_context 참조.
 --   buys/sells   = trade_date = current_date (하루만 산다)

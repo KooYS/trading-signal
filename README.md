@@ -33,7 +33,12 @@ python3 collect.py flow_backfill 25     # 수급 소급 (1페이지 ≈ 120거�
 python3 collect.py price      # 일별 시세 1페이지(약 15개월)
 python3 collect.py price_backfill 20   # 일별 시세를 20페이지까지 소급
 python3 collect.py fin        # 분기 매출·순이익·영업이익 5년치
+python3 collect.py dart_corp        # DART corp_code 대응표 (disclosure 전 1회)
+python3 collect.py disclosure --all # DART 공시 (신호 전 종목, 2019~)
 ```
+
+DART 는 `DART_KEY` 환경변수가 필요하다(opendart.fss.or.kr 무료 발급, 일 2만건).
+키를 저장소에 커밋하지 않는다.
 
 `price` 는 한 번에 다 안 온다. `count` 상한이 300~499 사이고 응답의
 `nextDateTime` 을 `?from=` 으로 되돌려줘야 그 이전 구간이 온다. 1페이지가
