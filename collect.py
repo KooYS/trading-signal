@@ -41,11 +41,14 @@ def upsert(rows):
     if not rows:
         return 0
     key = os.environ["SUPABASE_KEY"]
+    h = {"Content-Type": "application/json", "apikey": key,
+         "Prefer": "resolution=merge-duplicates,return=minimal"}
+    if key.startswith("eyJ"):
+        # 레거시 service_role은 JWT라 Bearer로도 보낸다. 신형 sb_secret_ 키는
+        # Bearer에 실으면 JWT 파싱을 시도하다 Invalid JWT로 거절당한다.
+        h["Authorization"] = f"Bearer {key}"
     req(f'{os.environ["SUPABASE_URL"].rstrip("/")}/rest/v1/signal'
-        f'?on_conflict=stock_code,trade_date,trade_flag', rows,
-        {"Content-Type": "application/json", "apikey": key,
-         "Authorization": f"Bearer {key}",
-         "Prefer": "resolution=merge-duplicates,return=minimal"})
+        f'?on_conflict=stock_code,trade_date,trade_flag', rows, h)
     return len(rows)
 
 
