@@ -246,6 +246,14 @@ select trade_date, exp(sum(ln(1+mkt_r)) over (order by trade_date))::numeric lvl
 from daily where mkt_r > -1;
 create index if not exists mkt_idx on mkt_index (trade_date);
 
+-- 매일 08:30 KST(23:30 UTC, 일~목) 전일 시세를 채우고 지표를 다시 계산한다.
+-- 09:03 첫 폴링 전에 끝난다. 안 하면 과열도가 조용히 옛 데이터로 매겨진다.
+-- 신규 종목은 하루 0.05건(0.6%)이라 신호 목록 전체를 미리 받아둬도 거의 안 샌다.
+--   create extension pg_cron;
+--   select cron.schedule('daily-tech', '30 23 * * 0-4', $$select daily_tech_refresh()$$);
+-- 수집은 DB 안에서 한다 — http 확장으로 토스를 직접 부른다(Supabase 도 서울이라
+-- 지역 제한에 안 걸린다). Lambda 없이도 지표가 유지되게 하려는 것이다.
+
 -- 화면용 단일 JSON: page_live. 정의는 Supabase 마이그레이션
 -- page_live_add_closed_rounds_and_buy_context 참조.
 --   buys/sells   = trade_date = current_date (하루만 산다)

@@ -45,6 +45,10 @@ DART 는 `DART_KEY` 환경변수가 필요하다(opendart.fss.or.kr 무료 발�
 `nextDateTime` 을 `?from=` 으로 되돌려줘야 그 이전 구간이 온다. 1페이지가
 약 300거래일(15개월)이라 `price_backfill 20` 이면 20년 남짓이다.
 
+지표(`tech_daily`·`mkt_index`)는 **매일 08:30 KST 에 DB 안에서 스스로 갱신한다**
+(`pg_cron` + `http` 확장으로 토스를 직접 호출). Lambda 가 죽어도 화면 점수는 유지된다.
+반대로 `price` 를 손으로 채웠으면 `refresh materialized view` 를 꼭 같이 해야 한다.
+
 Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).
 테이블 `signal` — 스키마·설계 근거는 [`schema.sql`](schema.sql).
 라운드(B→S 한 사이클) 분석은 `signal_round` 뷰를 쓴다. 같은 날 B/S가 동시에 나는
