@@ -99,8 +99,18 @@ create table if not exists flow (
   indiv_net    bigint,            -- 개인 순매수
   inst_net     bigint,            -- 기관 순매수 (+매수 / -매도)
   foreign_net  bigint,            -- 외국인 순매수
-  pension_net  bigint, trust_net bigint,
-  foreign_hold bigint, foreign_rate numeric(6,2),
+  -- 기관 세부 7주체. 합 = inst_net (2,499행 전건 검증)
+  fin_inv_net  bigint,            -- 금융투자(증권)
+  insurance_net bigint,           -- 보험
+  trust_net    bigint,            -- 투신
+  pe_fund_net  bigint,            -- 사모
+  bank_net     bigint,            -- 은행
+  other_fin_net bigint,           -- 기타금융
+  pension_net  bigint,            -- 연기금
+  other_corp_net bigint,          -- 기타법인 (기관 합계 미포함)
+  -- 외국인은 주체별 분해가 없다(단일 집계)
+  foreign_buy  bigint, foreign_sell bigint,
+  foreign_hold bigint, foreign_limit bigint, foreign_rate numeric(6,2),
   src_updated_at timestamptz,
   collected_at timestamptz not null default now(),
   primary key (stock_code, trade_date)

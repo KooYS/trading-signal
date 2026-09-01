@@ -315,9 +315,19 @@ def flow_rows(code, body):
             "indiv_net": x.get("netIndividualsBuyVolume"),
             "foreign_net": x.get("netForeignerBuyVolume"),
             "inst_net": x.get("netInstitutionBuyVolume"),
-            "pension_net": x.get("netPensionFundBuyVolume"),
+            # 기관 세부 7주체. 금융투자+투신+사모+보험+은행+기타금융+연기금 = inst_net (실측 일치)
+            "fin_inv_net": x.get("netFinancialInvestmentBuyVolume"),
+            "insurance_net": x.get("netInsuranceBuyVolume"),
             "trust_net": x.get("netTrustBuyVolume"),
+            "pe_fund_net": x.get("netPrivateEquityFundBuyVolume"),
+            "bank_net": x.get("netBankBuyVolume"),
+            "other_fin_net": x.get("netOtherFinancialInstitutionsBuyVolume"),
+            "pension_net": x.get("netPensionFundBuyVolume"),
+            "other_corp_net": x.get("netOtherCorporationBuyVolume"),   # 기관 합계엔 미포함
+            "foreign_buy": x.get("foreignerBuyVolume"),
+            "foreign_sell": x.get("foreignerSellVolume"),
             "foreign_hold": x.get("foreignerHoldingVolume"),
+            "foreign_limit": x.get("foreignerLimitVolume"),
             "foreign_rate": x.get("foreignerRatio"),
             "src_updated_at": x.get("updatedAt"),
         })
