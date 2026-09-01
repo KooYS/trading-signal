@@ -149,9 +149,13 @@ GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
 
 **분기 재무 4개 전부 익명으로 열린다.** POST 본문을 빈 `{}` 로 보내도 200이 온다.
 
-- `revenue-and-net-profit`, `operating-income` — 기본 **3년치**(2023-09 ~ 2026-06, 12분기).
-  응답에 `selectedRange: {code:3, "3년"}` 과 `selectableRanges: [1년, 3년, 5년]` 이 있다.
-  **본문에 코드를 실으면 5년까지 늘어난다**(요청 형식은 2단계에서 확정).
+- `revenue-and-net-profit`, `operating-income` — 본문 **`{"range": 5}`** 라야 5년이다.
+  빈 본문이면 3년만 온다. `rangeCode`·`code`·`period`·`selectedRange` 등 다른 이름은
+  전부 무시되고 3년이 온다(2단계 실측).
+  **⚠️ `table[]` 은 range 와 무관하게 12개로 잘린다.** 5년치는 `graph[]` 에 있다.
+  대신 `table` 에만 `netProfitGrowthRatio` 가 있어서 둘을 period 로 합쳐야 전량이 나온다.
+  (`table` 만 읽었다가 97종목 전부 12분기 이하로 들어와서 발견)
+  ETF·리츠는 재무제표가 없어 404다 — 오늘 신호 119종목 중 22개가 ETF라 건너뛴다.
 - `financial-statements/comprehensive` — `selectedFactor: LIABILITY_RATIO`,
   `selectableFactors` 에 부채비율·유동비율 등. 지표를 골라 받는 구조다.
 - `financial-statement-records` — `selectedFactor: BAL(재무상태표)`,

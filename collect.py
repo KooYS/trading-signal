@@ -451,23 +451,33 @@ def _won(v):
     return int(v)
 
 
+def _series(r):
+    """분기 시계열. graph 와 table 을 period 로 합친다.
+
+    ⚠️ table[] 은 range 와 무관하게 12개로 잘린다. {"range":5} 를 보내도
+    table 은 12분기고 5년치는 graph[] 에 있다(실측: 97종목 전부 12분기 이하).
+    대신 table 에만 netProfitGrowthRatio 가 있어서 둘 다 봐야 한다."""
+    merged = {}
+    for key in ("graph", "table"):
+        for x in (r or {}).get(key) or []:
+            p = x.get("period")
+            if p:
+                merged.setdefault(p, {}).update(x)
+    return merged
+
+
 def fin_rows(code, rev, opi):
-    """분기 실적 → financials 행. 두 엔드포인트 모두 table[] 에
-    {period: 'YYYY-MM', ...} 로 분기별로 온다. period 로 합친다."""
+    """분기 실적 → financials 행. period 로 합친다."""
     out = {}
-    for x in (rev or {}).get("table") or []:
-        p = x.get("period")
-        if p:
-            out[p] = {"stock_code": code, "period": p,
-                      "revenue": _won(x.get("revenue")),
-                      "net_profit": _won(x.get("netProfit")),
-                      "net_profit_ratio": x.get("netProfitRatio"),
-                      "net_profit_growth": x.get("netProfitGrowthRatio")}
-    for x in (opi or {}).get("table") or []:
-        p = x.get("period")
-        if p:
-            out.setdefault(p, {"stock_code": code, "period": p})
-            out[p]["operating_income"] = _won(_operating(x))
+    for p, x in _series(rev).items():
+        out[p] = {"stock_code": code, "period": p,
+                  "revenue": _won(x.get("revenue")),
+                  "net_profit": _won(x.get("netProfit")),
+                  "net_profit_ratio": x.get("netProfitRatio"),
+                  "net_profit_growth": x.get("netProfitGrowthRatio")}
+    for p, x in _series(opi).items():
+        out.setdefault(p, {"stock_code": code, "period": p})
+        out[p]["operating_income"] = _won(_operating(x))
     return list(out.values())
 
 
@@ -520,14 +530,20 @@ def check():
     assert pr["base_price"] == 260000 and pr["amount"] == 6069687118000, pr
     assert not price_rows("x", [{"close": 1}])          # dt 없는 건 버린다
     # 분기 실적 — 매출·순이익은 실측 필드, 영업이익은 이름을 집어낸다
+    # graph 가 길고(5년) table 이 12개뿐이며 성장률을 보탠다 — 합쳐야 전량이 나온다
     f = fin_rows("005930",
-                 {"table": [{"period": "2023-09", "revenue": 67404652000000,
+                 {"graph": [{"period": "2021-09", "revenue": 1, "netProfit": 2},
+                            {"period": "2023-09", "revenue": 67404652000000,
+                             "netProfit": 5844171000000, "netProfitRatio": 8.67}],
+                  "table": [{"period": "2023-09", "revenue": 67404652000000,
                              "netProfit": 5844171000000, "netProfitRatio": 8.67,
                              "netProfitGrowthRatio": 239.07}]},
-                 {"table": [{"period": "2023-09", "operatingIncome": 2433500000000,
+                 {"graph": [{"period": "2023-09", "operatingIncome": 2433500000000,
                              "operatingIncomeRatio": 3.61}]})
-    assert len(f) == 1 and f[0]["revenue"] == 67404652000000, f
-    assert f[0]["operating_income"] == 2433500000000, f      # 비율을 집으면 안 된다
+    by = {r["period"]: r for r in f}
+    assert len(f) == 2 and by["2021-09"]["revenue"] == 1, f      # graph 만 있는 분기도 살린다
+    assert by["2023-09"]["net_profit_growth"] == 239.07, f       # table 이 성장률을 보탠다
+    assert by["2023-09"]["operating_income"] == 2433500000000, f  # 비율을 집으면 안 된다
     g = fin_rows("x", {"table": [{"period": "2024-03", "revenue": 1}]},
                  {"table": [{"period": "2024-03", "operatingIncomeKrw": 9,
                              "someOperatingValue": 7}]})     # 이름 미상 → 환산액은 제외
