@@ -28,6 +28,7 @@ python3 collect.py backfill   # 오늘 종목 매매이력 전량
 python3 collect.py news       # 오늘 종목 최근 뉴스 (Google News RSS, 키 불필요)
 python3 collect.py news_backfill 2026-08   # 월 단위 뉴스 소급
 python3 collect.py fund       # 펀더멘탈 (토스). poll 이 자동으로 함께 채운다
+python3 collect.py flow       # 외국인·기관 순매매 20일치 (네이버 금융)
 ```
 
 Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).

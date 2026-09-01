@@ -6,9 +6,10 @@
   news [code…]               오늘 신호 종목의 최근 뉴스 (Google News RSS).
   news_backfill YYYY-MM…     해당 월의 신호 종목 뉴스를 월 단위로 소급 수집.
   fund [code…]               오늘 신호 종목의 펀더멘탈 (토스증권). 하루 1행 스냅샷.
+  flow [code…]               외국인·기관 순매매 20일치 (네이버 금융).
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
-import hashlib, json, os, ssl, sys, time, urllib.error, urllib.parse
+import hashlib, json, os, re, ssl, sys, time, urllib.error, urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -22,6 +23,7 @@ except ImportError:
 API = "https://api.thinkpool.com"
 GNEWS = "https://news.google.com/rss/search"
 TOSS = "https://wts-info-api.tossinvest.com/api"
+NAVER_FRGN = "https://finance.naver.com/item/frgn.naver"
 RASSI = "https://rassiapp.thinkpool.com:47700/rassi_ext"
 H = {"Origin": "https://www.thinkpool.com", "User-Agent": "Mozilla/5.0",
      "Content-Type": "application/json", "Accept": "application/json"}
@@ -285,6 +287,55 @@ def fund(codes):
     return upsert(rows, "fundamental", "stock_code,as_of")
 
 
+def _int(t):
+    """'+6,408' / '-12,213' / '294,839' → int. 빈 값이면 None."""
+    t = t.replace(",", "").replace("+", "").strip()
+    if not t or t in ("-", "N/A"):
+        return None
+    try:
+        return int(t)
+    except ValueError:
+        return None
+
+
+def flow_rows(code, html_text):
+    """네이버 금융 frgn 페이지 → flow 행. 열 순서는 고정이다:
+    날짜 | 종가 | 전일비 | 등락률 | 거래량 | 기관순매매 | 외국인순매매 | 보유주수 | 보유율"""
+    import html as _h
+    rows = []
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html_text, re.S):
+        if not re.search(r"\d{4}\.\d{2}\.\d{2}", tr):
+            continue
+        c = [_h.unescape(re.sub(r"<[^>]+>", "", x)).replace("\xa0", " ").strip()
+             for x in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
+        c = [x for x in c if x]
+        if len(c) < 9:
+            continue
+        rows.append({
+            "stock_code": code, "trade_date": c[0].replace(".", "-"),
+            "close_price": _int(c[1]),
+            "change_rate": float(c[3].replace("%", "").replace("+", "") or 0),
+            "volume": _int(c[4]), "inst_net": _int(c[5]), "foreign_net": _int(c[6]),
+            "foreign_hold": _int(c[7]),
+            "foreign_rate": float(c[8].replace("%", "") or 0),
+        })
+    return rows
+
+
+def flow(codes):
+    rows, fail = [], []
+    for c in codes:
+        try:
+            raw = req(f"{NAVER_FRGN}?code={c}", headers={"User-Agent": H["User-Agent"]}, raw=True)
+            rows += flow_rows(c, raw.decode("euc-kr", errors="ignore"))
+        except Exception as e:
+            fail.append((c, str(e)[:50]))
+        time.sleep(0.25)
+    if fail:
+        print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
+    return upsert(rows, "flow", "stock_code,trade_date")
+
+
 def check():
     live = {"457190": {"stockCode": "457190", "tradeDate": "20260831",
                        "tradeTime": "142000", "tradePrice": "69450", "profitRate": "-0.79"}}
@@ -312,6 +363,9 @@ def lambda_handler(event, _context):
     if cmd == "backfill":
         return {"cmd": cmd, "upserted": backfill(
             sorted({x["stockCode"] for _, x in today_codes()}))}
+    if cmd == "flow":
+        return {"cmd": cmd, "upserted": flow(
+            sorted({x["stockCode"] for _, x in today_codes()}))}
     if cmd == "fund":
         return {"cmd": cmd, "upserted": fund(
             sorted({x["stockCode"] for _, x in today_codes()}))}
@@ -331,6 +385,9 @@ if __name__ == "__main__":
     elif cmd == "backfill":
         codes = [a for a in args if not a.startswith("--")]
         print("upserted", backfill(codes or sorted({x["stockCode"] for _, x in today_codes()})))
+    elif cmd == "flow":
+        codes = sorted({x["stockCode"] for _, x in today_codes()})
+        print("upserted", flow([c for c in codes if not args or c in args]))
     elif cmd == "fund":
         codes = sorted({x["stockCode"] for _, x in today_codes()})
         print("upserted", fund([c for c in codes if not args or c in args]))

@@ -88,3 +88,23 @@ select distinct on (stock_code) *,
        case when high_52w > low_52w
             then round(100.0 * (close_price - low_52w) / (high_52w - low_52w), 1) end as pos_52w
 from fundamental order by stock_code, as_of desc;
+
+-- 투자자별 매매동향 (네이버 금융 frgn). 일별 20행씩 받아 누적.
+create table if not exists flow (
+  stock_code   text not null,
+  trade_date   date not null,
+  close_price  integer, change_rate numeric(8,2), volume bigint,
+  inst_net     bigint,            -- 기관 순매매량 (+매수 / -매도)
+  foreign_net  bigint,            -- 외국인 순매매량
+  foreign_hold bigint, foreign_rate numeric(6,2),
+  collected_at timestamptz not null default now(),
+  primary key (stock_code, trade_date)
+);
+create index if not exists flow_code_date_idx on flow (stock_code, trade_date desc);
+alter table flow enable row level security;
+
+alter table fundamental add column if not exists market text;
+
+-- ⚠️ buy_score 는 fundamental_latest 가 아니라 '신호 날짜 이하의 최근 스냅샷'을 조인해야 한다.
+--    최신을 붙이면 내일 오늘 신호가 내일 지표로 점수 매겨져 과거 검증이 불가능해진다.
+--    전체 정의는 Supabase 마이그레이션 fix_asof_join_and_add_flow_v2 참조.
