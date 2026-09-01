@@ -25,7 +25,7 @@ BASE  https://wts-info-api.tossinvest.com/api
 | `wts-api.tossinvest.com` | ❌ 401 (세션 필요) |
 | `wts-cert-api.tossinvest.com` | ❌ 인증 필요 — 주문·보유·red-flags |
 
-## 2. 핵심 엔드포인트 4개
+## 2. 핵심 엔드포인트 5개
 
 ### 2-1. 투자지표 (PER·PBR·ROE·배당) ★
 
@@ -89,6 +89,42 @@ GET /v1/companies/{code}/sales-compositions        ← 여기는 "A" 접두 없�
 ```
 > **이 엔드포인트만 종목코드에 `A` 접두를 안 붙인다.** ETF·신규상장은 없을 수 있어 실패를 흡수할 것.
 
+### 2-5. 투자자별 매매동향 (개인·외국인·기관) ★
+
+```
+GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
+```
+```jsonc
+// result.body[] — 최근일부터 내림차순
+[{ "baseDate":"2026-09-01", "close":5860, "base":5740,
+   "netIndividualsBuyVolume":-5980, "netForeignerBuyVolume":-62119,
+   "netInstitutionBuyVolume":67863,
+   // 기관 세부 7주체 — 합이 netInstitutionBuyVolume 과 정확히 일치 (2,499행 전건 검증)
+   "netFinancialInvestmentBuyVolume":-9535,   // 금융투자(증권)
+   "netInsuranceBuyVolume":0, "netTrustBuyVolume":47535,
+   "netPrivateEquityFundBuyVolume":29863, "netBankBuyVolume":0,
+   "netOtherFinancialInstitutionsBuyVolume":0, "netPensionFundBuyVolume":0,
+   "netOtherCorporationBuyVolume":852,        // 기타법인 — 기관 합계에 미포함
+   "foreignerBuyVolume":415313, "foreignerSellVolume":477432,
+   "foreignerHoldingVolume":14006797, "foreignerLimitVolume":70283330,
+   "foreignerRatio":19.93,
+   "inMarketTime":false, "updatedAt":"2026-09-01T15:37:15.000+09:00" }]
+```
+
+> ⚠️ **`/analytics` 탭의 `section-orders` 에는 이 섹션이 없다.** 주문 탭에서 호출된다.
+> analytics 목록만 보고 "토스엔 수급 없음"이라 판단하면 틀린다(실제로 한 번 틀렸다).
+
+- **당일치가 나온다.** 네이버 금융(`finance.naver.com/item/frgn.naver`)도 같은 데이터를 주지만
+  **하루 늦고**(17:23에도 전일이 최신) 20일치뿐이며 euc-kr HTML 파싱이 필요하다. 토스가 전 항목 우위.
+- **당일 값은 잠정치다.** 장마감 직후 `updatedAt`이 15:37로 찍히고 20시경 확정값으로 갱신된다
+  (전일 행의 `updatedAt`은 20:19). 그래서 수집을 낮(poll)과 20:30 두 번 돌린다.
+- **외국인은 주체별 분해가 없다.** 매수/매도/보유/한도/비율만 주는 단일 집계. 기관만 7주체로 쪼개진다.
+- `size`로 일수 지정(60 확인).
+
+> 연속 순매수 일수만 세면 규모를 놓친다. 실측 예:
+> `뷰웍스 기관 12일 연속 +579주`(노이즈) vs `지니언스 기관 3일 연속 +11만주`(실매수).
+> 일수와 수량을 함께 볼 것.
+
 ## 3. 그 밖에 관측된 것 (미분석)
 
 `/analytics` 탭에서 호출되는 것들. 전부 `wts-info-api`라 익명으로 열릴 가능성이 높다.
@@ -105,6 +141,7 @@ GET /v1/companies/{code}/sales-compositions        ← 여기는 "A" 접두 없�
 | `POST /v2/stock-infos/evaluation-comparison/A{code}` | 동종업계 밸류 비교 |
 | `POST /v2/stock-infos/stability/A{code}` | 재무 안정성 |
 | `GET /v1/c-chart/kr-s/A{code}/day:1?count=100` | 일봉 차트 ★ |
+| `GET /v1/stock-infos/A{code}/wts-badges` · `header/A{code}` | 뱃지·헤더 |
 
 > **`c-chart`가 일별 시세다.** 손절 백테스트에 필요한 그 데이터일 가능성이 높다. `count`를 늘려 얼마나 소급되는지 확인할 것.
 
