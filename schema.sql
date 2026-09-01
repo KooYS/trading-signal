@@ -123,3 +123,11 @@ alter table fundamental add column if not exists market text;
 -- ⚠️ buy_score 는 fundamental_latest 가 아니라 '신호 날짜 이하의 최근 스냅샷'을 조인해야 한다.
 --    최신을 붙이면 내일 오늘 신호가 내일 지표로 점수 매겨져 과거 검증이 불가능해진다.
 --    전체 정의는 Supabase 마이그레이션 fix_asof_join_and_add_flow_v2 참조.
+
+-- 화면용 단일 JSON: page_live. 정의는 Supabase 마이그레이션
+-- page_live_add_closed_rounds_and_buy_context 참조.
+--   buys/sells   = trade_date = current_date (하루만 산다)
+--   open         = open_position 중 buy_date < current_date
+--   closed       = signal_round 의 최근 30일 (매도 탭이 사라진 뒤 결과를 되짚는 곳)
+-- ⚠️ 전부 current_date 기준인데 DB 타임존이 UTC다. 날짜가 넘어가는 순간이
+--    09:00 KST = 장 시작이고, 00:00~09:00 KST 에는 전날로 뜬다.

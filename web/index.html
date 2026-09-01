@@ -60,6 +60,7 @@ h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .bar{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);
   padding:10px 0;margin-bottom:18px}
 .bar-in{max-width:1340px;margin:0 auto;padding:0 20px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.chips{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 .chip{font:inherit;font-size:12.5px;padding:5px 12px;border-radius:2px;cursor:pointer;
   background:var(--surface);color:var(--ink-2);border:1px solid var(--line)}
 .chip:hover{border-color:var(--muted)}
@@ -156,14 +157,88 @@ td.r,th.r{text-align:right}
 .up{color:var(--buy)} .down{color:var(--sell)}
 .age{color:var(--muted);font-size:12px}
 .scroller{overflow-x:auto}
+.scroller > .empty{background:var(--surface);border:1px solid var(--line);border-radius:4px}
+
+/* 관심 종목 별. 카드·표 어디서든 같은 모양 */
+.star{font:inherit;font-size:13px;line-height:1;padding:1px 3px;border:0;background:none;
+  cursor:pointer;color:var(--muted);opacity:.4;border-radius:2px}
+.star:hover{opacity:.85}
+.star.on{color:var(--news);opacity:1}
+.star:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+th.s,td.s{width:24px;padding-left:10px;padding-right:0}
+/* 종목 칸에 물려둔 코드·시장. 넓은 화면에서는 각자 칸이 있으므로 숨는다 */
+.nm-code,.nm-mkt{display:none}
+.nm-code{font-size:11.5px;color:var(--muted);font-weight:400}
+.card-head .star{font-size:15px;margin-left:-3px}
+.chip.fav[aria-pressed="true"]{background:var(--news);color:#fff;border-color:var(--news)}
+
+/* 관심 종목이 팔렸다는 알림. 확인을 누를 때까지 남는다 */
+.alert{margin:0 0 16px;padding:11px 13px;border:1px solid var(--news);background:var(--news-bg);
+  border-radius:3px;font-size:12.5px;color:var(--ink-2);display:flex;gap:10px;align-items:flex-start}
+.alert b{font-weight:600;color:var(--ink)}
+.alert ul{margin:5px 0 0;padding-left:16px;line-height:1.75}
+.alert .x{margin-left:auto;flex:none;font:inherit;font-size:16px;line-height:1;padding:0 4px;
+  border:0;background:none;color:var(--muted);cursor:pointer}
+.alert .x:hover{color:var(--ink)}
 
 footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;
   color:var(--muted);font-weight:300;line-height:1.7;max-width:92ch}
-@media (max-width:660px){
-  .grid{grid-template-columns:1fr}
+/* ── 좁은 화면 ──────────────────────────────────────────────
+   표가 10칸을 넘어서 가로 스크롤로는 못 읽는다. 한 줄을 카드로 접고
+   칸 이름을 각 값 옆에 붙인다(td::before + data-label).          */
+@media (max-width:680px){
+  .wrap{padding:0 14px 56px}
+  .top-in{padding:18px 14px 14px}
+  .bar-in{padding:0 14px}
+  h1{font-size:17px}
+  .sub{margin-bottom:14px;font-size:12.5px}
+  .who{display:block;margin:3px 0 0;padding:0;border-left:0}
+  .metric{flex:1 1 calc(50% - 5px);min-width:0;padding:9px 10px}
+  .metric dd{font-size:18px}
+
+  /* 칩이 여섯이라 줄바꿈하면 화면을 다 먹는다. 칩만 가로로 흘리고
+     갱신 시각·건수는 윗줄에 남긴다 */
+  .bar-in{gap:5px 8px}
+  .live{order:0;margin-left:0;flex:none}
+  .count{order:1;margin-left:auto;flex:none}
+  .chips{order:2;flex:0 0 100%;flex-wrap:nowrap;overflow-x:auto;gap:6px;
+    scrollbar-width:none;padding-bottom:1px}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none}
+
+  .lede{font-size:12px;padding:10px 11px}
+  .grid{grid-template-columns:1fr;gap:10px}
   .body{grid-template-columns:1fr;height:auto}
   .pane-l{border-right:0;border-bottom:1px solid var(--line-soft)}
   .news-list{max-height:190px}
+  .card-head{padding:10px 12px;gap:7px}
+  .rank{min-width:16px}
+  .nm{font-size:14.5px}
+
+  /* 표 → 카드 */
+  .scroller{overflow-x:visible}
+  table{display:block;border:0;background:none;border-radius:0;overflow:visible}
+  thead{display:none}
+  tbody{display:block}
+  tr{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:0 12px;padding:9px 12px;margin-bottom:8px;background:var(--surface);
+    border:1px solid var(--line);border-radius:4px;box-shadow:var(--shadow)}
+  td{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    border:0;padding:2px 0;text-align:right;font-size:12.5px}
+  td::before{content:attr(data-label);flex:none;color:var(--muted);font-weight:300;font-size:11px}
+  /* 종목은 DOM 순서와 무관하게 카드 제목 줄로 올린다 */
+  td.col-nm{order:-1;grid-column:1/-1;justify-content:flex-start;align-items:center;gap:6px;
+    padding:0 30px 6px 0;margin-bottom:5px;font-size:14px;font-weight:500;
+    border-bottom:1px solid var(--line-soft)}
+  td.col-code,td.col-mkt{display:none}    /* 제목 줄로 올라갔다 */
+  .nm-code,.nm-mkt{display:inline-block}
+  td.s{position:absolute;top:5px;right:7px;width:auto;padding:0}
+  .star{font-size:17px;padding:5px 7px}   /* 손가락으로 누를 크기 */
+
+  .alert{padding:10px 11px}
+  .alert ul{padding-left:15px}
+  .alert .x{font-size:20px;padding:2px 6px;margin-top:-2px}
+  footer{font-size:11px}
 }
 </style>
 
@@ -183,6 +258,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);font-si
 </div>
 
 <main class="wrap">
+  <div id="alert"></div>
   <p class="lede" id="lede"></p>
   <div class="grid" id="grid"></div>
   <div class="scroller" id="table" hidden></div>
@@ -195,7 +271,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);font-si
 /* 발행 시점 스냅샷. 라이브 연결이 되면 교체된다 */
 let D = JSON.parse(document.getElementById("data").textContent);
 let M = JSON.parse(document.getElementById("meta").textContent);
-let BUYS = D.buys, SELLS = D.sells, OPEN = D.open || [];
+let BUYS = D.buys, SELLS = D.sells, OPEN = D.open || [], CLOSED = D.closed || [];
 let FLOW_ASOF = (BUYS.find(b => b.fasof) || {}).fasof || null;
 let DATA_DATE = D.date || null;
 
@@ -215,6 +291,34 @@ const qty = v => {
   if (a >= 1e4) return sign + (a / 1e4).toFixed(a >= 1e5 ? 0 : 1) + "만주";
   return sign + a.toLocaleString() + "주";
 };
+
+/* ── 관심 종목 ───────────────────────────────────────────────
+   이 브라우저의 localStorage 에만 있다. 서버에 사용자 개념이 없어서
+   폰과 PC 가 따로 논다. 공유하려면 테이블이 하나 더 필요하다.      */
+const FAV_KEY = "fav.codes", SEEN_KEY = "fav.seen";
+const store = {
+  get(k, dflt) { try { return JSON.parse(localStorage.getItem(k)) ?? dflt; } catch { return dflt; } },
+  set(k, v)    { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 시크릿 창 */ } },
+};
+const FAV = new Set(store.get(FAV_KEY, []));
+let favOnly = false;
+const key = c => c.code + ":" + (c.sd || "");
+const pick = rows => favOnly ? rows.filter(r => FAV.has(r.code)) : rows;
+
+function toggleFav(code) {
+  FAV.has(code) ? FAV.delete(code) : FAV.add(code);
+  store.set(FAV_KEY, [...FAV]);
+  syncCounts(); renderAlert(); render();
+}
+function star(code) {
+  const on = FAV.has(code);
+  const b = el("button", "star" + (on ? " on" : ""), on ? "★" : "☆");
+  b.type = "button";
+  b.title = on ? "관심 해제" : "관심 등록";
+  b.setAttribute("aria-pressed", String(on));
+  b.addEventListener("click", () => toggleFav(code));
+  return b;
+}
 
 const metricRows = () => [
   ["오늘 매수 신호", BUYS.length + "건", "오늘 새로 뜬 것만"],
@@ -245,6 +349,7 @@ function buyCard(c, rank) {
 
   const head = el("div", "card-head");
   head.append(el("span", "rank mono", "#" + rank));
+  head.append(star(c.code));
   head.append(el("span", "nm", c.name));
   head.append(el("span", "cd mono", c.code));
   if (c.mkt) head.append(el("span", "mkt " + (c.mkt === "코스피" ? "kp" : "kq"), c.mkt));
@@ -340,54 +445,139 @@ function newsItem(n, after) {
   return d;
 }
 
+/* 표 머리. [제목, 우측정렬] */
+function tableHead(t, cols) {
+  const hr = el("tr");
+  hr.append(el("th", "s", ""));                       // 별 칸
+  for (const [h, r] of cols) hr.append(el("th", r ? "r" : null, h));
+  const thead = el("thead"); thead.append(hr); t.append(thead);
+  return el("tbody");
+}
+const won = v => v ? Number(v).toLocaleString() : "—";
+const starCell = code => { const n = el("td", "s"); n.append(star(code)); return n; };
+
+/* 좁은 화면에서 표는 한 줄이 카드 하나로 접힌다. 그때 data-label 이 이름표가 된다 */
+function td(label, cls, text) {
+  const n = el("td", cls, text);
+  if (label) n.dataset.label = label;
+  return n;
+}
+/* 종목 칸. 접히면 카드 제목 줄이 되므로 코드·시장을 함께 물고 간다
+   (넓은 화면에서는 그 둘이 각자 칸을 갖고, 여기 붙은 건 숨는다) */
+function nameCell(o) {
+  const n = el("td", "col-nm");
+  n.append(el("span", null, o.name));
+  n.append(el("span", "nm-code mono", o.code));
+  if (o.mkt) n.append(el("span", "nm-mkt mkt " + (o.mkt === "코스피" ? "kp" : "kq"), o.mkt));
+  return n;
+}
+/* 수익률 칸. 부호에 따라 색이 붙는다 */
+function pctCell(label, v) {
+  const n = v == null ? null : Number(v);
+  return td(label, "r mono " + (n > 0 ? "up" : n < 0 ? "down" : ""), n == null ? "—" : pct(n));
+}
+
 function sellTable() {
   const t = el("table");
-  const hr = el("tr");
-  for (const [h, r] of [["종목", 0], ["코드", 0], ["시장", 0], ["시각", 0],
-                        ["매도가", 1], ["현재가", 1], ["실현수익률", 1], ["기사", 1]])
-    hr.append(el("th", r ? "r" : null, h));
-  const thead = el("thead"); thead.append(hr); t.append(thead);
-  const tb = el("tbody");
-  for (const s of SELLS) {
+  const tb = tableHead(t, [["종목", 0], ["코드", 0], ["시장", 0], ["시각", 0],
+                      ["매수일", 0], ["매수가", 1], ["매도가", 1], ["현재가", 1],
+                      ["실현수익률", 1], ["보유", 1]]);
+  for (const s of pick(SELLS)) {
     const tr = el("tr");
-    tr.append(el("td", null, s.name));
-    tr.append(el("td", "mono", s.code));
-    tr.append(el("td", null, s.mkt || "—"));
-    tr.append(el("td", "mono", s.time));
-    tr.append(el("td", "r mono", s.price ? s.price.toLocaleString() : "—"));
-    tr.append(el("td", "r mono", s.now ? s.now.toLocaleString() : "—"));
-    const v = s.profit == null ? null : Number(s.profit);
-    tr.append(el("td", "r mono " + (v > 0 ? "up" : v < 0 ? "down" : ""), v == null ? "—" : pct(v)));
-    tr.append(el("td", "r mono", s.news || "0"));
+    tr.append(starCell(s.code));
+    tr.append(nameCell(s));
+    tr.append(td("코드", "mono col-code", s.code));
+    tr.append(td("시장", "col-mkt", s.mkt || "—"));
+    tr.append(td("매도 시각", "mono", s.time));
+    tr.append(td("매수일", "mono age", s.bd || "—"));
+    tr.append(td("매수가", "r mono", won(s.bp)));
+    tr.append(td("매도가", "r mono", won(s.price)));
+    tr.append(td("현재가", "r mono", won(s.now)));
+    tr.append(pctCell("실현수익률", s.profit));
+    tr.append(td("보유", "r mono age", s.held == null ? "—" : s.held + "일"));
     tb.append(tr);
   }
   t.append(tb);
   return t;
 }
 
-/* 탭은 셋뿐이다. 매수 안에서는 필터로 쪼개지 않고 점수 하나로 세운다 */
+/* 청산 — 매도로 닫힌 라운드. 오늘 매도 탭은 하루면 사라지므로
+   "결국 얼마 났나" 를 되짚는 창구는 여기다 */
+function closedTable() {
+  const t = el("table");
+  const tb = tableHead(t, [["매도일", 0], ["종목", 0], ["코드", 0], ["시장", 0],
+                      ["매수일", 0], ["매수가", 1], ["매도가", 1],
+                      ["실현수익률", 1], ["보유", 1]]);
+  for (const c of pick(CLOSED)) {
+    const tr = el("tr");
+    tr.append(starCell(c.code));
+    tr.append(td("매도일", "mono", c.sd));
+    tr.append(nameCell(c));
+    tr.append(td("코드", "mono col-code", c.code));
+    tr.append(td("시장", "col-mkt", c.mkt || "—"));
+    tr.append(td("매수일", "mono age", c.bd));
+    tr.append(td("매수가", "r mono", won(c.bp)));
+    tr.append(td("매도가", "r mono", won(c.sp)));
+    tr.append(pctCell("실현수익률", c.profit));
+    tr.append(td("보유", "r mono age", c.held + "일"));
+    tb.append(tr);
+  }
+  t.append(tb);
+  return t;
+}
+
+/* 신호의 일생을 탭 순서로 세웠다: 오늘 매수 → 진행중 → 오늘 매도 → 청산 */
 const TABS = [
-  ["buy",  "오늘 매수", () => BUYS.length],
-  ["open", "진행중",    () => OPEN.length],
-  ["sell", "오늘 매도", () => SELLS.length],
-  ["all",  "전체",      () => BUYS.length + SELLS.length],
+  ["buy",    "오늘 매수", () => pick(BUYS).length],
+  ["open",   "진행중",    () => pick(OPEN).length],
+  ["sell",   "오늘 매도", () => pick(SELLS).length],
+  ["closed", "청산",      () => pick(CLOSED).length],
+  ["all",    "전체",      () => pick(BUYS).length + pick(SELLS).length],
 ];
 const HINT = {
-  open: "이전 날짜에 매수 신호가 났고 아직 매도 신호가 안 난 것. 오늘의 진입 후보가 아니라 경과 관찰 대상이다.",
-  all:  "오늘 발생한 신호 전부. 최근 순.",
-  buy:  "오늘 새로 발생한 매수 신호만. 진입 점수 순이며, 점수는 수익성·밸류·타이밍·규모 4축 균등(각 25점)이고 카드의 태그가 그 근거다.",
-  sell: "매도 신호는 보유 중일 때만 의미가 있다. 신호만 받아두고 판단은 따로.",
+  open:   "이전 날짜에 매수 신호가 났고 아직 매도 신호가 안 난 것. 오늘의 진입 후보가 아니라 경과 관찰 대상이다.",
+  all:    "오늘 발생한 신호 전부. 최근 순.",
+  buy:    "오늘 새로 발생한 매수 신호만. 진입 점수 순이며, 점수는 수익성·밸류·타이밍·규모 4축 균등(각 25점)이고 카드의 태그가 그 근거다.",
+  sell:   "오늘 매도 신호가 난 것. 그 종목을 언제 얼마에 샀다고 신호했는지 함께 붙였다.",
+  closed: "매도로 끝난 라운드. 최근 30일. 매수 신호가에 사서 매도 신호가에 팔았다고 가정한 실현수익률이고 수수료·세금·슬리피지는 빠져 있다.",
+};
+/* 탭이 비었을 때 빈 화면 대신 이유를 적는다 */
+const EMPTY = {
+  buy:    "오늘은 아직 매수 신호가 없다. 장중 폴링은 09:03 부터 20분 간격이고, 주말·공휴일에는 신호가 나지 않는다.",
+  open:   "보유중으로 잡힌 종목이 없다. 매수 신호가 난 다음 날부터 여기에 뜬다.",
+  sell:   "오늘은 매도 신호가 없다.",
+  closed: "최근 30일 안에 끝난 라운드가 없다.",
+  all:    "오늘 발생한 신호가 없다.",
 };
 
 const bar = document.getElementById("filters");
 const cnt = document.getElementById("count");
+const chipRow = el("div", "chips");
+bar.insertBefore(chipRow, cnt);
 for (const [key, label, n] of TABS) {
   const b = el("button", "chip");
   b.dataset.f = key;
   b.setAttribute("aria-pressed", String(key === "buy"));
   b.append(document.createTextNode(label + " "));
   b.append(el("span", "n mono", String(n())));
-  bar.insertBefore(b, cnt);
+  chipRow.append(b);
+}
+/* 이건 탭이 아니라 모든 탭에 걸리는 토글이다 */
+const favChip = el("button", "chip fav");
+favChip.dataset.fav = "1";
+favChip.setAttribute("aria-pressed", "false");
+favChip.title = "★ 를 눌러둔 종목만 본다";
+favChip.append(document.createTextNode("★ 관심만 "));
+favChip.append(el("span", "n mono", String(FAV.size)));
+chipRow.append(favChip);
+
+function syncCounts() {
+  for (const [k, , n] of TABS) {
+    const b = document.querySelector(`.chip[data-f="${k}"] .n`);
+    if (b) b.textContent = String(n());
+  }
+  const f = document.querySelector(".chip[data-fav] .n");
+  if (f) f.textContent = String(FAV.size);
 }
 
 /* 점수의 근거를 문장 대신 태그로. 카드를 보면 왜 위에 있는지 읽힌다 */
@@ -411,46 +601,95 @@ function render() {
   const lede = document.getElementById("lede");
   lede.replaceChildren(el("b", null, HINT[filter]));
 
+  const n = TABS.find(t => t[0] === filter)[2]();
+  if (!n) {                                   // 빈 격자 대신 이유를 적는다
+    grid.hidden = true; table.hidden = false;
+    table.replaceChildren(el("p", "empty", favOnly
+      ? "관심 종목 중에는 해당하는 게 없다. ★ 관심만 을 끄면 전체가 보인다."
+      : EMPTY[filter]));
+    cnt.textContent = "0건";
+    return;
+  }
+
   if (filter === "buy") {
     grid.hidden = false; table.hidden = true;
-    grid.replaceChildren(...BUYS.map((c, i) => buyCard(c, i + 1)));
+    grid.replaceChildren(...pick(BUYS).map((c, i) => buyCard(c, i + 1)));
     lede.append(document.createTextNode(
       " 지표가 없는 축(ETF)은 만점이 아니라 중립 12점으로 본다. 이 점수는 매수 추천이 아니라 정렬 기준이다."
-      + (FLOW_ASOF ? ` 수급은 ${FLOW_ASOF} 기준이고 당일치는 20시경 확정된다.` : "")));
-    cnt.textContent = `${BUYS.length}건 · 진입 점수 높은 순`;
+      + (FLOW_ASOF ? ` 수급은 ${FLOW_ASOF} 기준이고 당일치는 20시경 확정된다.` : "")
+      + " ★ 를 눌러두면 진행중·청산까지 따라다니고, 팔리면 맨 위에 알림이 뜬다."));
+    cnt.textContent = `${n}건 · 진입 점수 높은 순`;
     return;
   }
   grid.hidden = true; table.hidden = false;
-  table.replaceChildren(filter === "sell" ? sellTable()
-                      : filter === "open" ? openTable() : allTable());
-  cnt.textContent = filter === "sell" ? `${SELLS.length}건`
-                  : filter === "open" ? `${OPEN.length}종목 보유중`
-                  : `${BUYS.length + SELLS.length}건 · 최근 순`;
+  table.replaceChildren(filter === "sell"   ? sellTable()
+                      : filter === "open"   ? openTable()
+                      : filter === "closed" ? closedTable() : allTable());
+  cnt.textContent = filter === "sell"   ? `${n}건`
+                  : filter === "open"   ? `${n}종목 보유중`
+                  : filter === "closed" ? `${n}라운드 · 최근 30일`
+                  : `${n}건 · 최근 순`;
+}
+
+/* ── 관심 종목 매도 알림 ─────────────────────────────────────
+   오늘 매도 탭은 하루면 사라진다. 놓치지 않게, 확인을 누를 때까지
+   남긴다. 확인 표시도 이 브라우저에만 쌓인다.                  */
+function renderAlert() {
+  const box = document.getElementById("alert");
+  const seen = new Set(store.get(SEEN_KEY, []));
+  const fresh = CLOSED.filter(c => FAV.has(c.code) && !seen.has(key(c)));
+  box.replaceChildren();
+  if (!fresh.length) return;
+
+  const d = el("div", "alert"), body = el("div");
+  body.append(el("b", null, `관심 종목 ${fresh.length}건이 매도됐다`));
+  const ul = el("ul");
+  for (const c of fresh.slice(0, 8)) {
+    const li = el("li");
+    li.append(document.createTextNode(c.name + " "));
+    const v = Number(c.profit);
+    li.append(el("span", "mono " + (v > 0 ? "up" : v < 0 ? "down" : ""), pct(v)));
+    li.append(el("span", "mono", ` ${won(c.bp)} → ${won(c.sp)}`));
+    li.append(document.createTextNode(` · ${c.sd} · ${c.held}일 보유`));
+    ul.append(li);
+  }
+  if (fresh.length > 8) ul.append(el("li", null, `외 ${fresh.length - 8}건`));
+  body.append(ul);
+  d.append(body);
+
+  const x = el("button", "x", "×");
+  x.type = "button"; x.title = "확인";
+  x.addEventListener("click", () => {
+    /* 30일 창을 벗어난 키는 같이 버린다 — 무한정 쌓이지 않게 */
+    const live = new Set(CLOSED.map(key));
+    store.set(SEEN_KEY, [...new Set([...seen, ...fresh.map(key)])].filter(k => live.has(k)));
+    renderAlert();
+  });
+  d.append(x);
+  box.append(d);
 }
 
 /* 보유중: 진입 이후 평가수익률 */
 function openTable() {
-  const t = el("table"), hr = el("tr");
-  for (const [h, r] of [["경과", 1], ["종목", 0], ["코드", 0], ["시장", 0], ["신호일", 0],
-                        ["신호가", 1], ["현재가", 1], ["신호 후", 1], ["수급", 0]])
-    hr.append(el("th", r ? "r" : null, h));
-  const thead = el("thead"); thead.append(hr); t.append(thead);
-  const tb = el("tbody");
-  for (const o of OPEN) {
+  const t = el("table");
+  const tb = tableHead(t, [["경과", 1], ["종목", 0], ["코드", 0], ["시장", 0], ["신호일", 0],
+                      ["신호가", 1], ["현재가", 1], ["신호 후", 1], ["수급", 0]]);
+  for (const o of pick(OPEN)) {
     const tr = el("tr");
-    tr.append(el("td", "r mono age", o.held + "일 전"));
-    tr.append(el("td", null, o.name));
-    tr.append(el("td", "mono", o.code));
-    tr.append(el("td", null, o.mkt || "—"));
-    tr.append(el("td", "mono", o.date));
-    tr.append(el("td", "r mono", o.buy ? o.buy.toLocaleString() : "—"));
-    tr.append(el("td", "r mono", o.now ? o.now.toLocaleString() : "—"));
-    const v = o.unreal == null ? null : Number(o.unreal);
-    tr.append(el("td", "r mono " + (v > 0 ? "up" : v < 0 ? "down" : ""), v == null ? "—" : pct(v)));
+    tr.append(starCell(o.code));
+    tr.append(td("경과", "r mono age", o.held + "일 전"));
+    tr.append(nameCell(o));
+    tr.append(td("코드", "mono col-code", o.code));
+    tr.append(td("시장", "col-mkt", o.mkt || "—"));
+    /* 백필로 들어온 행은 시각이 없다(TR_SIGNAL07이 날짜만 준다) */
+    tr.append(td("신호일", "mono", o.date + (o.btime ? " " + o.btime : "")));
+    tr.append(td("신호가", "r mono", won(o.buy)));
+    tr.append(td("현재가", "r mono", won(o.now)));
+    tr.append(pctCell("신호 후", o.unreal));
     const f = [];
     if (o.fgn >= 3) f.push("외국인 " + o.fgn + "일");
     if (o.ins >= 3) f.push("기관 " + o.ins + "일");
-    tr.append(el("td", null, f.join(" · ") || "—"));
+    tr.append(td("수급", null, f.join(" · ") || "—"));
     tb.append(tr);
   }
   t.append(tb);
@@ -460,30 +699,28 @@ function openTable() {
 /* 전체 탭: 매수·매도를 시각 순으로 한 줄씩 */
 function allTable() {
   const rows = [
-    ...BUYS.map(b => ({ f: "B", name: b.name, code: b.code, mkt: b.mkt, time: b.time,
+    ...pick(BUYS).map(b => ({ f: "B", name: b.name, code: b.code, mkt: b.mkt, time: b.time,
                         price: b.price, now: b.now, extra: b.score == null ? "—" : b.score + "점" })),
-    ...SELLS.map(s => ({ f: "S", name: s.name, code: s.code, mkt: s.mkt, time: s.time,
+    ...pick(SELLS).map(s => ({ f: "S", name: s.name, code: s.code, mkt: s.mkt, time: s.time,
                          price: s.price, now: s.now, extra: s.profit == null ? "—" : pct(s.profit) })),
   ].sort((a, b) => b.time.localeCompare(a.time));
 
-  const t = el("table"), hr = el("tr");
-  for (const [h, r] of [["구분", 0], ["종목", 0], ["코드", 0], ["시장", 0], ["시각", 0],
-                        ["신호가", 1], ["현재가", 1], ["점수 / 실현", 1]])
-    hr.append(el("th", r ? "r" : null, h));
-  const thead = el("thead"); thead.append(hr); t.append(thead);
-  const tb = el("tbody");
+  const t = el("table");
+  const tb = tableHead(t, [["구분", 0], ["종목", 0], ["코드", 0], ["시장", 0], ["시각", 0],
+                           ["신호가", 1], ["현재가", 1], ["점수 / 실현", 1]]);
   for (const r of rows) {
     const tr = el("tr");
-    const td = el("td");
-    td.append(el("span", "flag " + r.f, r.f === "B" ? "매수" : "매도"));
-    tr.append(td);
-    tr.append(el("td", null, r.name));
-    tr.append(el("td", "mono", r.code));
-    tr.append(el("td", null, r.mkt || "—"));
-    tr.append(el("td", "mono", r.time));
-    tr.append(el("td", "r mono", r.price ? r.price.toLocaleString() : "—"));
-    tr.append(el("td", "r mono", r.now ? r.now.toLocaleString() : "—"));
-    tr.append(el("td", "r mono", r.extra));
+    tr.append(starCell(r.code));
+    const fl = td("구분", null);
+    fl.append(el("span", "flag " + r.f, r.f === "B" ? "매수" : "매도"));
+    tr.append(fl);
+    tr.append(nameCell(r));
+    tr.append(td("코드", "mono col-code", r.code));
+    tr.append(td("시장", "col-mkt", r.mkt || "—"));
+    tr.append(td("시각", "mono", r.time));
+    tr.append(td("신호가", "r mono", won(r.price)));
+    tr.append(td("현재가", "r mono", won(r.now)));
+    tr.append(td("점수 / 실현", "r mono", r.extra));
     tb.append(tr);
   }
   t.append(tb);
@@ -493,8 +730,14 @@ function allTable() {
 document.getElementById("filters").addEventListener("click", e => {
   const b = e.target.closest(".chip");
   if (!b) return;
+  if (b.dataset.fav) {                        // 탭이 아니라 모든 탭에 걸리는 토글
+    favOnly = !favOnly;
+    b.setAttribute("aria-pressed", String(favOnly));
+    syncCounts(); render();
+    return;
+  }
   filter = b.dataset.f;
-  for (const c of document.querySelectorAll(".chip"))
+  for (const c of document.querySelectorAll(".chip[data-f]"))
     c.setAttribute("aria-pressed", String(c === b));
   render();
 });
@@ -522,16 +765,14 @@ function parseRows(payload) {
 
 function applyLive(d) {
   if (!d || !Array.isArray(d.buys)) return false;
-  D = d; BUYS = d.buys; SELLS = d.sells || []; OPEN = d.open || [];
+  D = d; BUYS = d.buys; SELLS = d.sells || []; OPEN = d.open || []; CLOSED = d.closed || [];
   FLOW_ASOF = (BUYS.find(b => b.fasof) || {}).fasof || null;
   DATA_DATE = d.date || null;
   if (d.stat) M = Object.assign({}, M, d.stat, {
     buy_news: BUYS.filter(c => c.news.some(n => n.pre)).length,
     buy_loss: BUYS.filter(c => c.loss).length });
-  for (const [key, , n] of TABS) {
-    const b = document.querySelector(`.chip[data-f="${key}"] .n`);
-    if (b) b.textContent = String(n());
-  }
+  syncCounts();
+  renderAlert();
   renderScore();
   render();
   return true;
@@ -602,9 +843,11 @@ document.getElementById("foot").textContent =
   `신호 ${M.rounds.toLocaleString()}라운드 · 기사 ${M.news.toLocaleString()}건 · ${M.stocks}종목. ` +
   `데이터 출처는 thinkpool.com 매매신호, Google News RSS, 토스증권. 개인 모니터링 목적으로만 수집했고 재배포하지 않는다. ` +
   `과거 성적은 수수료·세금·슬리피지를 반영하지 않았고, 추적 종목은 신호에 등장한 것에 한정되어 전체 시장을 대표하지 않는다. ` +
-  `진입 점수의 각 축이 실제 수익률과 상관있는지는 아직 검증하지 않았다. 투자 판단의 근거로 쓸 수 없다.`;
+  `진입 점수의 각 축이 실제 수익률과 상관있는지는 아직 검증하지 않았다. 투자 판단의 근거로 쓸 수 없다. ` +
+  `관심 종목(★)과 알림 확인 여부는 이 브라우저에만 저장되고 서버로 가지 않는다 — 폰과 PC 가 따로 논다.`;
 
 renderScore();
+renderAlert();
 render();
 </script>
 
