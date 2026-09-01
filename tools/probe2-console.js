@@ -96,6 +96,12 @@
     }
   }
 
+  /* 콘솔 copy() 는 async 문맥에서 자주 실패한다. 파일로 떨군다. */
   const text = log.join("\n");
-  try { copy(text); say("\n(클립보드에 복사됨)"); } catch { say("\n(콘솔 출력을 긁어서 복사하세요)"); }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  a.download = `probe2-${CODE}.txt`;
+  document.body.appendChild(a); a.click(); a.remove();
+  console.log("%c▶ probe2-" + CODE + ".txt 로 저장했다 (다운로드 폴더)", "font-weight:bold");
+  try { await navigator.clipboard.writeText(text); console.log("  클립보드에도 복사됨"); } catch {}
 })();
