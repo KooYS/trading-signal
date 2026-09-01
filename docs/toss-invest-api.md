@@ -126,7 +126,18 @@ GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=120
 > 일수와 수량을 함께 볼 것.
 
 **`size` 상한은 121~299 사이다**(120 OK, 300부터 400 — 실측). 120이면 약 5.7개월치.
-c-chart 와 달리 커서가 있는지는 아직 모른다. 있으면 수급도 몇 년치 소급이 된다.
+
+**페이지네이션이 있다.** 응답 `result` 가 `{pagingParam, body, lastPage}` 이고,
+`pagingParam` 을 **평평하게** 쿼리에 되돌려주면 그 이전 구간이 온다.
+
+```
+1페이지: ?productCode=A005930&size=120        → 2026-03-10 까지, lastPage=false
+          pagingParam = {"number":2,"size":120,"key":"2026-03-09"}
+2페이지: ?productCode=A005930&number=2&size=120&key=2026-03-09  → 2025-09-05 까지
+```
+
+⚠️ JSON 통째로 넣거나(`pagingParam={...}`) 점 표기(`pagingParam.key=`)는 무시당한다.
+`page`·`pageNumber` 도 안 먹는다. 키를 평평하게 펴는 것만 된다. `lastPage` 로 끝을 판단한다.
 
 ## 3. 그 밖에 관측된 것 (미분석)
 

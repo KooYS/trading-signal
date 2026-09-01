@@ -29,6 +29,7 @@ python3 collect.py news       # 오늘 종목 최근 뉴스 (Google News RSS, �
 python3 collect.py news_backfill 2026-08   # 월 단위 뉴스 소급
 python3 collect.py fund       # 펀더멘탈 (토스). poll 이 자동으로 함께 채운다
 python3 collect.py flow       # 외국인·기관 순매매 60일치 (토스)
+python3 collect.py flow_backfill 25     # 수급 소급 (1페이지 ≈ 120거래일)
 python3 collect.py price      # 일별 시세 1페이지(약 15개월)
 python3 collect.py price_backfill 20   # 일별 시세를 20페이지까지 소급
 python3 collect.py fin        # 분기 매출·순이익·영업이익 5년치

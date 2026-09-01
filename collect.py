@@ -7,6 +7,7 @@
   news_backfill YYYY-MM…     해당 월의 신호 종목 뉴스를 월 단위로 소급 수집.
   fund [code…]               오늘 신호 종목의 펀더멘탈 (토스증권). 하루 1행 스냅샷.
   flow [code…]               개인·외국인·기관 순매매 120일치 (토스증권).
+  flow_backfill [N] [code…]  수급을 N페이지까지 소급. 1페이지 ≈ 120거래일.
   price [code…]              일별 시세 1페이지(약 15개월). 토스 c-chart.
   price_backfill [N] [code…] 일별 시세를 N페이지까지 소급. 1페이지 ≈ 300거래일.
   fin [code…]                분기 매출·순이익·영업이익 5년치 (토스증권).
@@ -365,14 +366,28 @@ def flow_rows(code, body):
     return out
 
 
-def flow(codes, size=120):        # 상한은 121~299 사이. 300부터 400이다(실측)
+def flow(codes, size=120, pages=1):
+    """투자자별 매매동향. size 상한은 121~299 사이다(120 OK, 300부터 400 — 실측).
+
+    한 번에 다 안 온다. 응답의 pagingParam 을 **평평하게** 쿼리에 되돌려주면
+    그 이전 구간이 온다. {"number":2,"size":120,"key":"2026-03-09"} 를
+    number=2&size=120&key=2026-03-09 로 붙이는 식이다. JSON 통째로나
+    pagingParam.key 같은 점 표기는 무시당한다. lastPage 로 끝을 판단한다.
+    1페이지 ≈ 120거래일 ≈ 5.7개월."""
     rows, fail = [], []
     for c in codes:
+        q = f"productCode=A{c}&size={size}"
         try:
-            r = req(f"{TOSS}/v1/stock-infos/trade/trend/trading-trend"
-                    f"?productCode=A{c}&size={size}",
-                    headers={"User-Agent": H["User-Agent"]})["result"]["body"]
-            rows += flow_rows(c, r)
+            for _ in range(pages):
+                r = req(f"{TOSS}/v1/stock-infos/trade/trend/trading-trend?{q}",
+                        headers={"User-Agent": H["User-Agent"]})["result"]
+                body = r.get("body") or []
+                rows += flow_rows(c, body)
+                pp = r.get("pagingParam")
+                if not body or r.get("lastPage") or not pp:
+                    break
+                q = f"productCode=A{c}&" + urllib.parse.urlencode(pp)
+                time.sleep(0.2)
         except Exception as e:
             fail.append((c, str(e)[:50]))
         time.sleep(0.2)
@@ -580,8 +595,12 @@ def lambda_handler(event, _context):
     # thinkpool이 해외 IP를 막아서 서울(ap-northeast-2)에서 돈다. §7 참고
     ev = event or {}
     cmd = ev.get("cmd", "poll")
-    if cmd in ("backfill", "flow", "fund", "price", "price_backfill", "fin"):
+    if cmd in ("backfill", "flow", "flow_backfill", "fund",
+               "price", "price_backfill", "fin"):
         codes = event_codes(ev)
+        if cmd == "flow_backfill":
+            return {"cmd": cmd, "codes": len(codes),
+                    "upserted": flow(codes, pages=int(ev.get("pages", 25)))}
         fn = {"backfill": backfill, "flow": flow, "fund": fund, "fin": fin}.get(cmd)
         if fn:
             return {"cmd": cmd, "codes": len(codes), "upserted": fn(codes)}
@@ -614,6 +633,11 @@ if __name__ == "__main__":
     elif cmd == "news":
         pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
         print("upserted", news([p for p in pairs if not args or p[0] in args]))
+    elif cmd == "flow_backfill":
+        pages = int(args[0]) if args and args[0].isdigit() else 25
+        rest = [a for a in args[1:] if not a.startswith("--")]
+        codes = sorted({x["stockCode"] for _, x in today_codes()})
+        print("upserted", flow(rest or codes, pages=pages))
     elif cmd == "price":
         codes = sorted({x["stockCode"] for _, x in today_codes()})
         print("upserted", price([c for c in codes if not args or c in args]))
