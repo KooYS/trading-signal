@@ -505,31 +505,41 @@ def check():
     print("check ok")
 
 
+def event_codes(event):
+    """람다 페이로드에서 대상 종목을 고른다.
+
+    price_backfill 은 189종목 × 20페이지 ≈ 3,780요청 ≈ 19분이라 람다 하드
+    상한(15분)을 넘는다. batches/batch 로 쪼개 여러 번 부른다. 균등하게
+    나뉘도록 연속 구간이 아니라 stride 로 자른다.
+
+      {"cmd":"price_backfill","batches":10,"batch":3,"pages":20}
+      {"cmd":"fin","codes":["005930","000660"]}
+    """
+    ev = event or {}
+    codes = sorted({x["stockCode"] for _, x in today_codes()})
+    if ev.get("codes"):
+        want = set(ev["codes"])
+        return [c for c in codes if c in want]
+    n = int(ev.get("batches", 1))
+    return codes[int(ev.get("batch", 0)) % n::n] if n > 1 else codes
+
+
 def lambda_handler(event, _context):
     # thinkpool이 해외 IP를 막아서 서울(ap-northeast-2)에서 돈다. §7 참고
-    cmd = (event or {}).get("cmd", "poll")
-    if cmd == "backfill":
-        return {"cmd": cmd, "upserted": backfill(
-            sorted({x["stockCode"] for _, x in today_codes()}))}
-    if cmd == "flow":
-        return {"cmd": cmd, "upserted": flow(
-            sorted({x["stockCode"] for _, x in today_codes()}))}
-    if cmd == "fund":
-        return {"cmd": cmd, "upserted": fund(
-            sorted({x["stockCode"] for _, x in today_codes()}))}
-    if cmd == "price":
-        return {"cmd": cmd, "upserted": price(
-            sorted({x["stockCode"] for _, x in today_codes()}))}
-    if cmd == "price_backfill":
-        return {"cmd": cmd, "upserted": price(
-            sorted({x["stockCode"] for _, x in today_codes()}),
-            pages=int((event or {}).get("pages", 20)))}
-    if cmd == "fin":
-        return {"cmd": cmd, "upserted": fin(
-            sorted({x["stockCode"] for _, x in today_codes()}))}
+    ev = event or {}
+    cmd = ev.get("cmd", "poll")
+    if cmd in ("backfill", "flow", "fund", "price", "price_backfill", "fin"):
+        codes = event_codes(ev)
+        fn = {"backfill": backfill, "flow": flow, "fund": fund, "fin": fin}.get(cmd)
+        if fn:
+            return {"cmd": cmd, "codes": len(codes), "upserted": fn(codes)}
+        pages = int(ev.get("pages", 20)) if cmd == "price_backfill" else 1
+        return {"cmd": cmd, "codes": len(codes), "upserted": price(codes, pages=pages)}
     if cmd == "news":
+        want = set(event_codes(ev))
         return {"cmd": cmd, "upserted": news(
-            sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()}))}
+            sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()
+                    if x["stockCode"] in want}))}
     return {"cmd": cmd, **poll()}
 
 

@@ -73,6 +73,19 @@ aws lambda invoke --function-name trading-signal-collect \
   --cli-binary-format raw-in-base64-out --payload '{"cmd":"backfill"}' /dev/stdout
 ```
 
+로컬이 없으면 **Actions → lambda → Run workflow** 로 배포·실행한다.
+Secrets 에 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` 가 필요하다
+(`lambda:UpdateFunctionCode` 와 `lambda:InvokeFunction` 만 있으면 된다).
+
+**`price_backfill` 은 한 번에 안 끝난다.** 189종목 × 20페이지 ≈ 3,780요청 ≈ 19분인데
+람다 하드 상한이 15분이다. `batches` 를 10 정도로 주면 워크플로가 조각내어
+여러 번 부른다. 조각은 연속 구간이 아니라 stride 로 나뉘어 크기가 고르다.
+
+```
+{"cmd":"price_backfill","batches":10,"batch":3,"pages":20}
+{"cmd":"fin","codes":["005930","000660"]}
+```
+
 ## 화면
 
 - 아티팩트(개인용): 뷰어의 Supabase 커넥터로 읽어 매일 자동 갱신

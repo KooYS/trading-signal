@@ -1,0 +1,93 @@
+# 브라우저만으로 Lambda 에 배포하고 명령을 돌린다.
+# Actions -> lambda -> Run workflow.
+#
+# 필요한 Secrets (Settings -> Secrets and variables -> Actions):
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+#     lambda:UpdateFunctionCode 와 lambda:InvokeFunction 만 있으면 된다.
+#     넓은 권한 키를 넣지 말 것.
+#
+# 왜 러너에서 직접 안 돌리고 Lambda 를 거치나: thinkpool 이 해외 IP 를 막는다.
+# GitHub 러너는 미국이다. 토스만 쓰는 명령(price/fin)은 러너에서 될 수도 있는데
+# 아직 확인 안 됐다 — probe 워크플로로 먼저 재 볼 것.
+name: lambda
+
+on:
+  workflow_dispatch:
+    inputs:
+      cmd:
+        description: '실행할 명령'
+        type: choice
+        required: true
+        default: 'deploy-only'
+        options: [deploy-only, poll, backfill, flow, fund, news, price, price_backfill, fin]
+      batches:
+        description: '몇 조각으로 나눌지 (price_backfill 은 한 번에 15분을 넘긴다. 10 권장)'
+        required: false
+        default: '1'
+      pages:
+        description: 'price_backfill 소급 페이지 수 (1페이지 ≈ 300거래일)'
+        required: false
+        default: '20'
+
+env:
+  FN: trading-signal-collect
+  AWS_DEFAULT_REGION: ap-northeast-2
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Secrets 확인
+        env:
+          K: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          S: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -z "$K" ] || [ -z "$S" ]; then
+            echo "::error::AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY 가 없다."
+            exit 1
+          fi
+
+      # collect.py 는 의존성이 없어서 파일 하나 zip 이면 배포가 끝난다.
+      - name: 배포
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          zip -q collect.zip collect.py
+          aws lambda update-function-code --function-name "$FN" \
+            --zip-file fileb://collect.zip --output text \
+            --query 'LastModified' | sed 's/^/배포됨 /'
+          aws lambda wait function-updated --function-name "$FN"
+
+      - name: 실행
+        if: inputs.cmd != 'deploy-only'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          n="${{ inputs.batches }}"; n="${n:-1}"
+          echo "### ${{ inputs.cmd }} (조각 $n)" >> "$GITHUB_STEP_SUMMARY"
+          rc=0
+          for i in $(seq 0 $((n - 1))); do
+            payload=$(printf '{"cmd":"%s","batch":%d,"batches":%d,"pages":%s}' \
+                      "${{ inputs.cmd }}" "$i" "$n" "${{ inputs.pages }}")
+            echo "--- 조각 $i/$n  $payload"
+            # 함수가 예외로 죽어도 CLI 는 0 을 준다. FunctionError 로 판별한다.
+            err=$(aws lambda invoke --function-name "$FN" \
+                    --cli-binary-format raw-in-base64-out \
+                    --payload "$payload" --cli-read-timeout 900 \
+                    --query 'FunctionError' --output text out.json)
+            body=$(head -c 2000 out.json)
+            echo "$body"
+            {
+              echo ""
+              echo "조각 $i: \`$body\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$err" != "None" ]; then
+              echo "::error::조각 $i 에서 함수가 실패했다: $err"
+              rc=1
+            fi
+          done
+          exit $rc
