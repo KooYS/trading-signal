@@ -92,7 +92,7 @@ GET /v1/companies/{code}/sales-compositions        ← 여기는 "A" 접두 없�
 ### 2-5. 투자자별 매매동향 (개인·외국인·기관) ★
 
 ```
-GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
+GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=120
 ```
 ```jsonc
 // result.body[] — 최근일부터 내림차순
@@ -124,6 +124,9 @@ GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
 > 연속 순매수 일수만 세면 규모를 놓친다. 실측 예:
 > `뷰웍스 기관 12일 연속 +579주`(노이즈) vs `지니언스 기관 3일 연속 +11만주`(실매수).
 > 일수와 수량을 함께 볼 것.
+
+**`size` 상한은 121~299 사이다**(120 OK, 300부터 400 — 실측). 120이면 약 5.7개월치.
+c-chart 와 달리 커서가 있는지는 아직 모른다. 있으면 수급도 몇 년치 소급이 된다.
 
 ## 3. 그 밖에 관측된 것 (미분석)
 

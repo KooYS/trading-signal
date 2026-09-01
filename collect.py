@@ -6,7 +6,7 @@
   news [code…]               오늘 신호 종목의 최근 뉴스 (Google News RSS).
   news_backfill YYYY-MM…     해당 월의 신호 종목 뉴스를 월 단위로 소급 수집.
   fund [code…]               오늘 신호 종목의 펀더멘탈 (토스증권). 하루 1행 스냅샷.
-  flow [code…]               개인·외국인·기관 순매매 60일치 (토스증권).
+  flow [code…]               개인·외국인·기관 순매매 120일치 (토스증권).
   price [code…]              일별 시세 1페이지(약 15개월). 토스 c-chart.
   price_backfill [N] [code…] 일별 시세를 N페이지까지 소급. 1페이지 ≈ 300거래일.
   fin [code…]                분기 매출·순이익·영업이익 5년치 (토스증권).
@@ -365,7 +365,7 @@ def flow_rows(code, body):
     return out
 
 
-def flow(codes, size=60):
+def flow(codes, size=120):        # 상한은 121~299 사이. 300부터 400이다(실측)
     rows, fail = [], []
     for c in codes:
         try:
