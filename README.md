@@ -65,3 +65,19 @@ RLS가 켜져 있고 정책이 없어서 publishable 키로는 401이 난다.
 aws lambda invoke --function-name trading-signal-collect \
   --cli-binary-format raw-in-base64-out --payload '{"cmd":"backfill"}' /dev/stdout
 ```
+
+## 화면
+
+- 아티팩트(개인용): 뷰어의 Supabase 커넥터로 읽어 매일 자동 갱신
+- Vercel: https://trading-signal-wine.vercel.app/?k=<ACCESS_TOKEN>
+
+`web/` 이 Vercel 프로젝트다. `web/api/data.js` 가 service_role 키를 서버에만 두고
+`page_live` 뷰를 프록시한다. 토큰(`ACCESS_TOKEN`)이 없으면 401.
+
+**Supabase 뷰는 전부 `security_invoker = on`.** 끄면 뷰가 소유자 권한으로 돌아
+하위 테이블의 RLS를 우회하고, publishable(공개) 키로 데이터가 통째로 읽힌다.
+실제로 그 상태였고 이 커밋에서 막았다.
+
+```
+vercel deploy --prod        # web/ 에서
+```

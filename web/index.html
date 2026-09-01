@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<style>:root{color-scheme:light dark}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>구영서의 AI 매매 신호기</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F6F7F9; --surface:#FFFFFF; --sunk:#F0F2F5; --line:#E3E7EC; --line-soft:#EDF0F4;
+  --ink:#14171C; --ink-2:#3D444F; --muted:#697586;
+  --buy:#D42D2D; --buy-bg:#FDEDED; --sell:#1263C4; --sell-bg:#EAF2FC;
+  --news:#966C18; --news-bg:#FBF3E2; --warn:#B4341C; --warn-bg:#FCEEEB;
+  --bar:#3D444F;
+  --shadow:0 1px 2px rgba(20,23,28,.05), 0 6px 16px -10px rgba(20,23,28,.18);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --bg:#0F1216; --surface:#171B21; --sunk:#12161B; --line:#262C35; --line-soft:#1F252D;
+  --ink:#E6E9ED; --ink-2:#B7BEC9; --muted:#838C9A;
+  --buy:#FF7070; --buy-bg:#2A1618; --sell:#5FA6F2; --sell-bg:#111F30;
+  --news:#D6AC63; --news-bg:#241D10; --warn:#F08163; --warn-bg:#2B1712;
+  --bar:#8A93A0;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 20px -12px rgba(0,0,0,.7);
+}}
+:root[data-theme="dark"]{
+  --bg:#0F1216; --surface:#171B21; --sunk:#12161B; --line:#262C35; --line-soft:#1F252D;
+  --ink:#E6E9ED; --ink-2:#B7BEC9; --muted:#838C9A;
+  --buy:#FF7070; --buy-bg:#2A1618; --sell:#5FA6F2; --sell-bg:#111F30;
+  --news:#D6AC63; --news-bg:#241D10; --warn:#F08163; --warn-bg:#2B1712;
+  --bar:#8A93A0;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 20px -12px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  line-height:1.55;-webkit-font-smoothing:antialiased}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1340px;margin:0 auto;padding:0 20px 72px}
+
+.top{border-bottom:1px solid var(--line);background:var(--surface)}
+.top-in{max-width:1340px;margin:0 auto;padding:24px 20px 20px}
+h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
+.sub{margin:0 0 18px;color:var(--muted);font-size:13px;font-weight:300}
+.who{margin-left:6px;padding-left:9px;border-left:1px solid var(--line);font-size:12px}
+.scoreboard{display:flex;flex-wrap:wrap;gap:10px}
+.metric{flex:1 1 148px;min-width:148px;background:var(--sunk);border:1px solid var(--line-soft);
+  border-radius:3px;padding:10px 12px}
+.metric.flag{border-color:var(--news);background:var(--news-bg)}
+.metric dt{margin:0 0 4px;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.metric dd{margin:0;font-size:20px;font-weight:500;letter-spacing:-.02em}
+.metric .note{display:block;margin-top:2px;font-size:11.5px;color:var(--muted);font-weight:300;letter-spacing:0}
+.metric.flag dd{color:var(--news)}
+
+.bar{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);
+  padding:10px 0;margin-bottom:18px}
+.bar-in{max-width:1340px;margin:0 auto;padding:0 20px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.chip{font:inherit;font-size:12.5px;padding:5px 12px;border-radius:2px;cursor:pointer;
+  background:var(--surface);color:var(--ink-2);border:1px solid var(--line)}
+.chip:hover{border-color:var(--muted)}
+.chip:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.count{margin-left:auto;font-size:12px;color:var(--muted)}
+.live{margin-left:auto;font-size:11.5px;padding:2px 8px;border-radius:2px;color:var(--muted)}
+.live:empty{display:none}
+.live.wait{color:var(--muted);background:var(--sunk)}
+.live.ok{color:var(--ink-2);background:var(--sunk)}
+.live.warn{color:var(--warn);background:var(--warn-bg)}
+.live + .count{margin-left:10px}
+.chip .n{opacity:.55;font-size:11.5px;margin-left:1px}
+.chip[aria-pressed="true"] .n{opacity:.75}
+
+.lede{margin:0 0 16px;padding:11px 13px;background:var(--sunk);border:1px solid var(--line-soft);
+  border-radius:3px;font-size:12.5px;color:var(--muted);font-weight:300;line-height:1.6;max-width:88ch}
+.lede b{color:var(--ink-2);font-weight:500}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(455px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:4px;
+  box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.card-head{display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--line-soft)}
+.rank{font-size:11.5px;color:var(--muted);font-weight:500;min-width:20px}
+.nm{font-size:15px;font-weight:500;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cd{font-size:11.5px;color:var(--muted)}
+.mkt{font-size:10px;font-weight:600;padding:1px 5px;border-radius:2px;flex:none;letter-spacing:.02em}
+.mkt.kp{color:var(--sell);background:var(--sell-bg)}
+.mkt.kq{color:var(--news);background:var(--news-bg)}
+.nowbox{display:grid;gap:2px}
+.priceline,.sigline{display:flex;align-items:baseline;gap:6px}
+.now{font-size:19px;font-weight:500;letter-spacing:-.02em}
+.sig{font-size:13px;font-weight:400;color:var(--ink-2)}
+.plabel{font-size:10.5px;color:var(--muted);letter-spacing:.06em}
+.gap{font-size:11.5px;color:var(--muted);margin-left:auto}
+.gap.up{color:var(--buy)} .gap.down{color:var(--sell)}
+.tags{display:flex;flex-wrap:wrap;gap:5px;padding:10px 14px 11px}
+.tag{font-size:10.5px;font-weight:500;padding:2px 7px;border-radius:2px;letter-spacing:.01em}
+.tag.ok{color:var(--ink-2);background:var(--sunk);border:1px solid var(--line)}
+.tag.bad{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-bg)}
+.tag.na{color:var(--muted);background:transparent;border:1px dashed var(--line)}
+.tag.flow{color:var(--news);background:var(--news-bg);border:1px solid var(--news-bg)}
+.flag{font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:2px}
+.flag.B{color:var(--buy);background:var(--buy-bg)}
+.flag.S{color:var(--sell);background:var(--sell-bg)}
+.tm{margin-left:auto;font-size:12.5px;color:var(--muted);flex:none}
+
+.body{display:grid;grid-template-columns:216px 1fr;height:376px}
+.pane-l{padding:12px 14px;border-right:1px solid var(--line-soft);display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.pane-r{display:flex;flex-direction:column;min-height:0}
+
+.score-row{display:flex;align-items:baseline;gap:7px}
+.score-n{font-size:27px;font-weight:600;letter-spacing:-.03em;line-height:1}
+.score-l{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.axes{display:grid;gap:4px}
+.axis{display:grid;grid-template-columns:38px 1fr 24px;align-items:center;gap:7px;font-size:11px}
+.axis span:first-child{color:var(--muted);font-weight:300}
+.track{height:4px;background:var(--sunk);border-radius:2px;overflow:hidden}
+.fill{height:100%;background:var(--bar);border-radius:2px}
+.axis .v{text-align:right;color:var(--ink-2);font-weight:500}
+.axis.na .fill{background:var(--line)}
+.axis.na .v{color:var(--muted)}
+
+.facts{display:grid;grid-template-columns:auto 1fr;gap:3px 9px;font-size:12px}
+.facts dt{color:var(--muted);font-weight:300}
+.facts dd{margin:0;text-align:right;font-weight:500}
+.facts dd.neg{color:var(--buy)}
+.ind{font-size:11px;color:var(--muted);font-weight:300;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
+
+.news-h{display:flex;align-items:center;gap:6px;padding:9px 14px 7px;flex:none;
+  font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--news);flex:none}
+.news-list{overflow-y:auto;padding:0 14px 12px;flex:1;min-height:0;scrollbar-width:thin}
+.item{padding:7px 0;border-top:1px solid var(--line-soft)}
+.item:first-child{border-top:0}
+.item.post{opacity:.5}
+.item-t{font-size:12.5px;line-height:1.45;color:var(--ink-2);text-decoration:none;display:block}
+a.item-t:hover{color:var(--ink);text-decoration:underline}
+a.item-t:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.item-m{margin-top:3px;font-size:11px;color:var(--muted);display:flex;gap:7px}
+.split{display:flex;align-items:center;gap:8px;padding:9px 0 5px;font-size:10.5px;
+  letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.split::after{content:"";flex:1;height:1px;background:var(--line)}
+.empty{padding:14px;font-size:12.5px;color:var(--muted);font-weight:300}
+
+/* 매도 — 신호만 받는 목록 */
+table{width:100%;border-collapse:collapse;font-size:13px;background:var(--surface);
+  border:1px solid var(--line);border-radius:4px;overflow:hidden}
+th{text-align:left;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  font-weight:500;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--sunk)}
+td{padding:7px 12px;border-bottom:1px solid var(--line-soft)}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.up{color:var(--buy)} .down{color:var(--sell)}
+.age{color:var(--muted);font-size:12px}
+.scroller{overflow-x:auto}
+
+footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;
+  color:var(--muted);font-weight:300;line-height:1.7;max-width:92ch}
+@media (max-width:660px){
+  .grid{grid-template-columns:1fr}
+  .body{grid-template-columns:1fr;height:auto}
+  .pane-l{border-right:0;border-bottom:1px solid var(--line-soft)}
+  .news-list{max-height:190px}
+}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <h1>구영서의 AI 매매 신호기</h1>
+    <p class="sub">매수 신호를 진입 점수 순으로 세우고, 근거(뉴스)와 재무를 함께 붙였다.<span class="who">개인 모니터링</span></p>
+    <dl class="scoreboard" id="score"></dl>
+  </div>
+</header>
+
+<div class="bar">
+  <div class="bar-in" id="filters">
+    <span class="live" id="live"></span>
+    <span class="count" id="count"></span>
+  </div>
+</div>
+
+<main class="wrap">
+  <p class="lede" id="lede"></p>
+  <div class="grid" id="grid"></div>
+  <div class="scroller" id="table" hidden></div>
+  <footer id="foot"></footer>
+</main>
+
+<script id="data" type="application/json">{"date": "2026-09-01", "buys": [{"code": "035600", "name": "KG이니시스", "time": "15:00", "price": 10590, "now": 10550, "gap": -0.38, "score": 88, "sc": {"profit": 20, "value": 25, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.5, "roe": 10.1, "cap": 290699278700, "p52": 45.5, "ind": "IT서비스", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": 62047, "ins5": -632, "frate": 8.63, "news": [{"t": "KG이니시스, 순익 절반 주주에 돌려준다…2030년까지 50% 환원 - 네이트", "s": "네이트", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE53Q1YtNDR6SlE0Q18yLTJiUFVQSTBVNTdPZDlYRU1SVjZHMzkycU1sU3dFZjhfNTdBVzhma2tYa0liSURvY182MWlRNlRBdVZ6eGxv?oc=5", "at": "08-28 17:24", "pre": true}, {"t": "KG이니시스 \"2030년까지 순이익 50% 환원\"…자사주 매입·소각 병행 - 네이트", "s": "네이트", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE1feTI3azlXSVlmaklMOHI5ZHo2VUxPdUE5LW5VX2tLdEpDdW5HUk1zUElhSUhtRW5JbHR4OG9JSnRvRnZaZzltZlBfdG5RSUdqRjNR?oc=5", "at": "08-28 14:44", "pre": true}, {"t": "KG이니시스, 순이익 절반 주주에게 돌려준다…2030년까지 ‘50% 환원’ - 잡포스트", "s": "잡포스트", "u": "https://news.google.com/rss/articles/CBMibkFVX3lxTE5BRlZGeXh5NXJPc1VUSWRiX0ZISG5hVVhPb3NiVkhWbTRzRk5ub0hvTHFranlRRkRoSG5MY1dNcGF6OEtwN19ISDVRcDA0OXZ5bVlqY0t0NkNwYy0yZm4wdTJzcUhUU0Fzb01uRXd30gFyQVVfeXFMTVdxdWxPTl9oNldveFN3b3ljODBUdm5LRXRRam4xMFpvMFE2WEMydnliV1hUdEFvZ0JPc3JFMnpSNDBBN2NJUzVTZ1RUcWIyOTZsc3E4eU1jbkxNOVY0RDEwSWtWNV9KQjRoRzRhY3g5cXln?oc=5", "at": "08-28 11:48", "pre": true}, {"t": "KG이니시스, 2026~2030년 주주환원율 50%로 상향한 중장기 계획 발표 - 핀테크경제신문", "s": "핀테크경제신문", "u": "https://news.google.com/rss/articles/CBMiY0FVX3lxTFA2ekhENHRrTGF2Rm1FdmtBeEZ5cFhWenlxcDlVeng1eEF3Z0JXOUVEc3Q3NGpyTndoYTRIejlPT0o5QjFCcjhwaTVQa1B6andDS3E0VDdYQjZTbzE0M3YxanNrOA?oc=5", "at": "08-28 08:55", "pre": true}, {"t": "KG이니시스, 5개년 기업가치 제고 계획 공시…5년간 별도 조정 당기순이익 50% 환원 지향 - 디지털투데이", "s": "디지털투데이", "u": "https://news.google.com/rss/articles/CBMic0FVX3lxTE9YQUluNWptbzNPUTBybHVLSTl4T2ptdlVvNWd3OWZjREZ3RkpfcEh4aTlINndJZlZHX1daQkRRTmloQzBHNDJ5MFlSbUREeHdTaGxNZjNEQ2oxNVZsakVDOFo4VG8xa1VlUkpZcXpxMjBpYXc?oc=5", "at": "08-27 18:35", "pre": true}, {"t": "KG이니시스, 2026년 기업가치 제고 계획 이행현황 공시…주당 배당금 600원·배당성향 38.9% - 디지털투데이", "s": "디지털투데이", "u": "https://news.google.com/rss/articles/CBMic0FVX3lxTE90bVF6Y0szYTdrSzBIQ24xd2xvb0hDYlpIV0tjQ19ZakhUZEROdFlrbWFKTThTTTc4bUxVNnpyOERnTXNISHJpZVlfRGYyNllaNzF4UGNxRlJWZlVmejJKX0lzdnkwSHRicXJxcFJNQVRMaVU?oc=5", "at": "08-27 17:59", "pre": true}, {"t": "KG이니시스, 단기차입금 900억원 증가 결정…타법인 지분 취득·운영자금 목적 - 디지털투데이", "s": "디지털투데이", "u": "https://news.google.com/rss/articles/CBMic0FVX3lxTE5fQk5jVFo3V1BnT0NpS2p0TjZHTEFUNTlwblgwdGZ4RDZ1M3c5dk55RmphSDJSVlMxTDVwamwydkpiY1BTWWlRMXB3R3k5UDFZaVFEa0N4bGNYeXVoNklrcjBoWXAzSDVuWmZQMHhLXzdvRlU?oc=5", "at": "08-27 17:59", "pre": true}]}, {"code": "007860", "name": "서연", "time": "09:40", "price": 7970, "now": 8030, "gap": 0.75, "score": 83, "sc": {"profit": 20, "value": 25, "timing": 20, "size": 18}, "miss": 0, "loss": false, "mkt": "코스피", "pbr": 0.2, "roe": 10.2, "cap": 188543147320, "p52": 27.2, "ind": "자동차부품", "fgn": 0, "ins": 3, "fasof": "2026-09-01", "fgn5": -20267, "ins5": 222, "frate": 6.67, "news": []}, {"code": "289930", "name": "웨이비스", "time": "15:00", "price": 6720, "now": 6670, "gap": -0.74, "score": 82, "sc": {"profit": 25, "value": 20, "timing": 25, "size": 12}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.8, "roe": 76.9, "cap": 87703896700, "p52": 5.5, "ind": "우주항공과국방", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": -17313, "ins5": -11447, "frate": 8.22, "news": []}, {"code": "204620", "name": "글로벌텍스프리", "time": "15:00", "price": 5860, "now": 5860, "gap": 0.0, "score": 81, "sc": {"profit": 25, "value": 6, "timing": 25, "size": 25}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 2.5, "roe": 25.4, "cap": 411860313800, "p52": 58.2, "ind": "기타금융", "fgn": 0, "ins": 1, "fasof": "2026-09-01", "fgn5": 1745116, "ins5": -310077, "frate": 19.93, "news": [{"t": "[장중수급포착] 글로벌텍스프리, 외국인/기관 동시 순매수… 주가 +15.09% - 뉴스핌", "s": "뉴스핌", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE5HVDV1Wnhwb0RXVkNSVUw0NHZtUTgydkNxUHBQb3VfU2hYci1jdEFJSUpRRWRDM0VGbEdRdWpHYXZjb19jTUFwV2I0OXZTZW9fc1lIcFVOajZ4SWNF?oc=5", "at": "08-28 13:30", "pre": true}, {"t": "글로벌텍스프리(204620) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiYEFVX3lxTFByWmFsTlNQYkZPYnZVUTNRcll5emJEOUd6a1NtQVNuS3FoSHprNTlZSmJ0YzZ2T2FQeHRfWWdXNzBmZHllb0UtRHVFQlU2Z2stemlacWhNalNlV1hMUDdpTg?oc=5", "at": "08-28 13:30", "pre": true}, {"t": "글로벌텍스프리(204620) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE10UXgxLWQwNE9uNTJRYm1rV3NobzYxOG1ZSHNaTjFEUGhSRkF3VFNKRzZrcHhXaUtOVEpNeVc5YldTTWRwQ2NnS2RaeUttRTlfcGxZN1R3eXNUVkVyNGVNQQ?oc=5", "at": "08-28 10:16", "pre": true}, {"t": "[장중수급포착] 글로벌텍스프리, 외국인 5일 연속 순매수행진... 주가 +4.45% - 뉴스핌", "s": "뉴스핌", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE5kalNsRFVOX1JtQmpBbHNtYW1tWXFpLUNKb09HeXA2LXdPaHhUZnYzcmxhSlVrSlFKbldkZTlsR0NlS2hWbXlNTENhRFdHVkVJNmpuR0lUTTJDVEtF?oc=5", "at": "08-28 10:16", "pre": true}, {"t": "[장중수급포착] 글로벌텍스프리, 외국인/기관 동시 순매수… 주가 +1.36% - 뉴스핌", "s": "뉴스핌", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE5KcVRHZHRJV3hjRlpmUXFSaW5hVGpDNTl3Vld0dlZaai02bTQzMUh6TmNuaXFoXzQ0NzJWUWY2TEpURXBFZVVRNGplZVhXTVhNMmRXRWhHWEVMV1hB?oc=5", "at": "08-26 10:19", "pre": true}]}, {"code": "290740", "name": "액트로", "time": "15:00", "price": 11880, "now": 11800, "gap": -0.67, "score": 80, "sc": {"profit": 25, "value": 12, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 1.4, "roe": 16.1, "cap": 118767129800, "p52": 25.8, "ind": "핸드셋", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -116991, "ins5": -35936, "frate": 13.04, "news": [{"t": "액트로, 3분기 실적 정상화 기대…유진투자증권 \"신사업 양산 본격화\" - CBC뉴스", "s": "CBC뉴스", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFBEX1FLZ0tYWGVNS2NqYmxidXEyRUxhTHg3bll4WHV4Q1E2SGl2aTd0VVlSbDNZRzVjSThPZFRIc0gxS3BfMVpCX01scTExcXNhOWJuc0VfOElaeFdDOFlLMGVSc0dfSm1x?oc=5", "at": "08-27 07:40", "pre": true}, {"t": "[리포트 브리핑]액트로, '2Q26 Review: 하반기 신사업 전장부품 양산 돌입' Not Rated - 유진투자증권 - 뉴스핌", "s": "뉴스핌", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE1UVURacXpiTjNDU0RMdGNoNmVNQS1xUS1qMTlQR040M1VmRTUzSU1MaERFOFp2Z3BLZHZIeUtZTFVUZ2Z4dzZCMXFRN3NOSjByMkdoXzNZR0ZSV2di?oc=5", "at": "08-26 09:38", "pre": true}]}, {"code": "001390", "name": "KG케미칼", "time": "14:00", "price": 4450, "now": 4490, "gap": 0.9, "score": 78, "sc": {"profit": 15, "value": 25, "timing": 20, "size": 18}, "miss": 0, "loss": false, "mkt": "코스피", "pbr": 0.3, "roe": 9.1, "cap": 298152325640, "p52": 24.0, "ind": "자동차", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": 15405, "ins5": -3140, "frate": 11.86, "news": [{"t": "[실적속보]KG케미칼, 3년 중 최고 매출 달성, 영업이익은 전년동기 대비 15%↑ (연결) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFBvTVJ2YnFtb1ZEdWIyejBtXzFnU2IzRUxHaUxlZFdpVVlNM2xrb0xGRWtxUEdlcTdLbXMteXd6d0RUSWJiV0s1NmwySE1GV3Y4TEhLUGVKeEFVUDVxZ3VOMkdWYmFOVi1a?oc=5", "at": "08-30 16:23", "pre": true}, {"t": "KG케미칼, 반복된 타법인 취득 공시 정정…재무 건전성 의문 해소 과제 - 데일리연합", "s": "데일리연합", "u": "https://news.google.com/rss/articles/CBMiW0FVX3lxTE9OWXBnOXAwYk1DcXRlQzNXVE4wbnFFbGNhMkJJVHF3X1lsdkRVLUNPMWF0RHpiYWNyU3lVQ2RMZXhzUmhKSTRpV1VSdWp4MHc4UDlCb1d3MWxjS1k?oc=5", "at": "08-28 18:30", "pre": true}]}, {"code": "041520", "name": "이엘씨", "time": "15:00", "price": 11340, "now": 11240, "gap": -0.88, "score": 78, "sc": {"profit": 15, "value": 20, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.8, "roe": 9.5, "cap": 137001325200, "p52": 68.2, "ind": "반도체와반도체장비", "fgn": 3, "ins": 0, "fasof": "2026-09-01", "fgn5": 16491, "ins5": 0, "frate": 2.73, "news": []}, {"code": "010960", "name": "삼호개발", "time": "09:40", "price": 3090, "now": 3090, "gap": 0.0, "score": 77, "sc": {"profit": 15, "value": 25, "timing": 25, "size": 12}, "miss": 0, "loss": false, "mkt": "코스피", "pbr": 0.3, "roe": 5.8, "cap": 74530800000, "p52": 13.9, "ind": "건설", "fgn": 0, "ins": 2, "fasof": "2026-09-01", "fgn5": -64884, "ins5": 179, "frate": 6.86, "news": []}, {"code": "318020", "name": "포인트모바일", "time": "15:00", "price": 2715, "now": 2715, "gap": 0.0, "score": 76, "sc": {"profit": 25, "value": 20, "timing": 25, "size": 6}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.6, "roe": 27.8, "cap": 33397953480, "p52": 22.8, "ind": "전자장비와기기", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": 2276, "ins5": 0, "frate": 3.21, "news": []}, {"code": "100120", "name": "뷰웍스", "time": "15:20", "price": 26950, "now": 27400, "gap": 1.67, "score": 75, "sc": {"profit": 25, "value": 20, "timing": 12, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.9, "roe": 17.7, "cap": 245816661400, "p52": 55.6, "ind": "건강관리장비와용품", "fgn": 0, "ins": 12, "fasof": "2026-09-01", "fgn5": -4841, "ins5": 579, "frate": 30.31, "news": [{"t": "뷰웍스, 2027년 대졸 신입사원 공개채용…13개 직무 모집 - v.daum.net", "s": "v.daum.net", "u": "https://news.google.com/rss/articles/CBMiT0FVX3lxTE9zUVJjSzVxUmVIZHhTbC1uajdYSzhRdGhjLWZlTWpWRzd4VW1qRnhaOGxpRE5MQ2t4bkNZMXM0TUVVQ2VCdDdGZHRwYThkTzg?oc=5", "at": "09-01 09:43", "pre": true}]}, {"code": "054950", "name": "제이브이엠", "time": "13:20", "price": 24050, "now": 24050, "gap": 0.0, "score": 75, "sc": {"profit": 20, "value": 12, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 1.1, "roe": 13.4, "cap": 290761902600, "p52": 28.3, "ind": "건강관리장비와용품", "fgn": 3, "ins": 1, "fasof": "2026-09-01", "fgn5": 2876, "ins5": 3940, "frate": 19.81, "news": []}, {"code": "294570", "name": "쿠콘", "time": "15:00", "price": 29700, "now": 29400, "gap": -1.01, "score": 75, "sc": {"profit": 20, "value": 12, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 1.5, "roe": 12.2, "cap": 296696920800, "p52": 47.5, "ind": "IT서비스", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -63431, "ins5": 84612, "frate": 2.77, "news": [{"t": "쿠콘(294570)저점을 줄때마다 물량 모아둘 기회로 보이며 이후 전망 및 대응전략. - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE9CQ3NfQThYa3Z5dFdqNXY5eUJnUUZrRXJNb0JBYU5DaU9nUHdya0RVNjNHVzlTSGtsZ0h1OGRYalpPRWZjTlRyc0owaGdkb1hzNFJHWUdsMFoyaWxR?oc=5", "at": "09-01 08:07", "pre": true}, {"t": "[장중수급포착] 쿠콘, 기관 20일 연속 순매수행진... 주가 +25.65% - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiYEFVX3lxTFBhTFFINFRVTjdrYkZ5MmRfQVhBWVdkaU00b3dQdmE0N00tczRwcEpIaThqTUJjLTc0Z1NmNFNZSXdrZ3lxY3czcnhUQ0dsZDFrd0JaekR4TjBKNlNhenBybA?oc=5", "at": "08-29 12:35", "pre": true}, {"t": "쿠콘(294570) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE41cnpUcEZZQ2xGcDA5eWRvQk05MUNhREdEM2dpWjI0dGZyTkptWElmSGdNeFkxTVM1elo5Nm03MnVmMWxXTWJkWF9WZ2c4ZE1ucGpLSER1X2hZLWNiVUJRUQ?oc=5", "at": "08-29 11:54", "pre": true}, {"t": "[장중수급포착] 쿠콘, 외국인/기관 동시 순매수… 주가 +23.45% - 뉴스핌", "s": "뉴스핌", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTFBXQ2FrRjBndmp3UkNjcF9sak1rU3ZtODV1clM2NEVoMk5HV0NCR3Q2QlZZS0tsTDFUUkhlbTlORnZrQ2FrX0ZmYkhDdUxxSHIwMVZidjlnbnAtTmdU?oc=5", "at": "08-28 13:30", "pre": true}, {"t": "[장중수급포착] 쿠콘, 기관 20일 연속 순매수행진... 주가 +25.65% - 뉴스핌", "s": "뉴스핌", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE41ZUlRYlg0SmplUndVMWlqeGtqQXh0R0xUX2p6NmpSdEJBVHlJeGw2Y1B1N2hCUnhBbnhBMGVnaGxYVmUxdWVxM0Vxbk9DQlZpS3FVWEQxcnA5QzlJ?oc=5", "at": "08-28 11:30", "pre": true}, {"t": "[특징주] 쿠콘, 글로벌 주요 은행들의 스테이블코인 공동 발행 추진 소식에 급등세 - 와이드경제", "s": "와이드경제", "u": "https://news.google.com/rss/articles/CBMibEFVX3lxTE1lWHhLMzVLNU9ia1NDS3QyUklDQzZfRWE5SG90NnhCWVBOd1JKdlo4UHNRQ0M3dU9Ka24zN3EzR2h1dWlJV0Y2VW1vcXhuTjlUcVpvRzVTWXp1QXppeEdfRHlyVWdOanFkY2p3Tg?oc=5", "at": "08-28 10:40", "pre": true}, {"t": "글로벌 스테이블코인 시장 '들썩'…쿠콘 14%대 강세 [핫종목] - 파이낸셜뉴스", "s": "파이낸셜뉴스", "u": "https://news.google.com/rss/articles/CBMiWkFVX3lxTE9VcW95NEk3eW1PakxSZlVwQUFRMVdWUVEyOUNBMEdtbEpEcDMwUTdfNlpPY25QRE9kdTBfS3RyeTBZYVhqZTFkMDFzWEZReUp4Nmpodm5tQV90QQ?oc=5", "at": "08-28 09:56", "pre": true}, {"t": "글로벌 스테이블코인 시장 '들썩'…쿠콘 14%대 강세 [핫종목] - v.daum.net", "s": "v.daum.net", "u": "https://news.google.com/rss/articles/CBMiVEFVX3lxTE13SFRibFdpZDN3SVVqMndsY3ByckQ4TUsxems5UW5JQTNjTkZXWTFJQVJUd3RlQWVtQzNsRUtmNXBSYTFfUDhkbGE4U0pMclk0VlcxZQ?oc=5", "at": "08-28 09:56", "pre": true}, {"t": "글로벌 스테이블코인 시장 '들썩'…쿠콘 14%대 강세 [핫종목] - v.daum.net", "s": "v.daum.net", "u": "https://news.google.com/rss/articles/CBMiT0FVX3lxTE4yeFRfVlhIeW9XS3E2dmtuLTlyeVlEbnY1eW9weDZrN1hhV1h4VmdHZExKNVVFUjhHTEJlOURRWlRQWmRYVmVKSWs4NGU4bjA?oc=5", "at": "08-28 09:56", "pre": true}, {"t": "글로벌 스테이블코인 시장 '들썩'…쿠콘 14%대 강세 [핫종목] - v.daum.net", "s": "v.daum.net", "u": "https://news.google.com/rss/articles/CBMiRkFVX3lxTE1DMk5jMi1iaVNORHdHZnZyT1dxaGhfUTJoQUtQOGJXdnFqdzhUSGdkMmh4UW80WEZJQ0M2Y19IdzJMY1l4bGc?oc=5", "at": "08-28 09:56", "pre": true}, {"t": "특징주, 쿠콘-지역화폐 테마 상승세에 11.21% ↑ - 매일경제 마켓", "s": "매일경제 마켓", "u": "https://news.google.com/rss/articles/CBMiUkFVX3lxTE1uNmJTZ3N3Z21kZWdSR3VlWEwxOEFVZGphS1dFN1J6RUgxS2pTdzdSNjNLaTZ0VlZFazE4MzdFTjFqLXJ5NkJ6cG45LVRQVEhrNHc?oc=5", "at": "08-28 09:53", "pre": true}]}, {"code": "145990", "name": "삼양사", "time": "15:00", "price": 46600, "now": 46500, "gap": -0.21, "score": 75, "sc": {"profit": 0, "value": 25, "timing": 25, "size": 25}, "miss": 0, "loss": true, "mkt": "코스피", "pbr": 0.3, "roe": -17.9, "cap": 479575378500, "p52": 43.8, "ind": "식품", "fgn": 0, "ins": 28, "fasof": "2026-09-01", "fgn5": -7177, "ins5": 4826, "frate": 4.88, "news": [{"t": "삼양사 상쾌환, 연애 소재 다룬 '우리들의 상쾌환 더 무비' 캠페인 공개 - 네이트", "s": "네이트", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE5LZ2Z2OHU5eEZESW5RUVpLVEkwbTJ5emVhZHBZamszOWhMTmxSbVdwMDc4eC1UOVNPYzJYclRsNVpaR1NabGdzdEw5dUwtTkNPZ2FF?oc=5", "at": "09-01 09:02", "pre": true}, {"t": "삼양사 상쾌환, 연애 소재 다룬 '우리들의 상쾌환 더 무비' 캠페인 공개 - 뉴스1", "s": "뉴스1", "u": "https://news.google.com/rss/articles/CBMiakFVX3lxTE52NnhCQi1sSE5zUlhFWDlISU5JT1E2OWpIM2VUeHR4Z0JNcXQtV0tySHNNcFFyQ3RIZE5GR3FFNWRDX1dSUF9DSWE4OU9WbEQwd3dtSVJuQVVVMkpsR0JyVXdNQWt1dXV2ZlHSAWpBVV95cUxOdjZ4QkItbEhOc1JYRVg5SElOSU9RNjlqSDNlVHh0eGdCTXF0LVdLckhzTXBRckN0SGRORkdxRTVkQ19XUlBfQ0lhODlPVmxEMHd3bUlSbkFVVTJKbEdCclV3TUFrdXV1dmZR?oc=5", "at": "09-01 09:01", "pre": true}, {"t": "'전분당 담합 과징금' 삼양사 면제…대상은 2341억원 내야 - 네이트", "s": "네이트", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE40QlJSaEdtbkNTNnhXZ1Y0UkIzdnptRk81T1FTc2tfQlVRMWNtcThPQ3BxUzYyWGZWbk44RFc3b2dGdzNuRVpMS2tYanlkcGp2YXRV?oc=5", "at": "08-31 18:16", "pre": true}, {"t": "'전분당 담합 과징금' 삼양사 면제…대상은 2341억원 내야 - edaily.co.kr", "s": "edaily.co.kr", "u": "https://news.google.com/rss/articles/CBMigAFBVV95cUxPaFNUaGR4TmFZOUZZU1NucFk5WWRkYkhfT1MwZUczSWEzaEhIa3FqQ1pMdzhuWndyYnRNakJnd0cxYl9wWVhiNm5XR0xHSzgxUHJMVFRVVFNCWEhXR3BnVmRZcXYyOHZkNEd6V0I4UmNZaUxsdHJ6MG1sckZEa1lFVg?oc=5", "at": "08-31 18:14", "pre": true}, {"t": "삼양사, 전분당 담합 과징금 전액 면제받았다 | - 연합인포맥스", "s": "연합인포맥스", "u": "https://news.google.com/rss/articles/CBMidEFVX3lxTE1rdV9TTWlpOTBNcE53Nk9hS1liNEdmb0ZNdmxRcEo5U2k3Y2ZCelBub0ttRmd2ZUlxdjE0R3JPVVpsUTNmOXJ0MHctbVNmRHA4NTZ4T09ERGRSUVM3YU5RRzc2Nmc0ZUdpQkdWTjJjdFpLR2hm?oc=5", "at": "08-31 17:42", "pre": true}, {"t": "조세금융신문 - 조세금융신문", "s": "조세금융신문", "u": "https://news.google.com/rss/articles/CBMiZEFVX3lxTE1JaW5BdnVaUEFnazBBbEdMREtGUTJIaVNuX2Z5aGdRZDc2cWpKa1JaLXJiZTc3d2w0VUxtZE90Umk4U2xVOVNDbWc4S0t3Nk9ZemdhVVVRRl9sc3JYZzMyTTFMb1o?oc=5", "at": "08-27 05:39", "pre": true}]}, {"code": "0167Z0", "name": "KODEX 미국우주항공", "time": "15:00", "price": 7535, "now": 7530, "gap": -0.07, "score": 74, "sc": {"profit": null, "value": null, "timing": 25, "size": 25}, "miss": 2, "loss": false, "mkt": "코스피", "pbr": null, "roe": null, "cap": 345627000000, "p52": 9.0, "ind": null, "fgn": 2, "ins": 0, "fasof": "2026-09-01", "fgn5": -34113, "ins5": -327014, "frate": 0.07, "news": []}, {"code": "457480", "name": "ACE 테슬라밸류체인액티브", "time": "09:20", "price": 18980, "now": 18880, "gap": -0.53, "score": 74, "sc": {"profit": null, "value": null, "timing": 25, "size": 25}, "miss": 2, "loss": false, "mkt": "코스피", "pbr": null, "roe": null, "cap": 779744000000, "p52": 33.9, "ind": null, "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": 5450, "ins5": 20864, "frate": 0.59, "news": []}, {"code": "376300", "name": "디어유", "time": "09:40", "price": 18430, "now": 18630, "gap": 1.09, "score": 74, "sc": {"profit": 25, "value": 12, "timing": 12, "size": 25}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 2.0, "roe": 17.7, "cap": 442246503780, "p52": 2.8, "ind": "양방향미디어와서비스", "fgn": 3, "ins": 0, "fasof": "2026-09-01", "fgn5": 31330, "ins5": -36745, "frate": 3.38, "news": [{"t": "[투데이리포트]디어유, \"오프라인 사업 확장…\" BUY-하이투자증권 - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTE1oUF85dGZvWG5VVl9IS2Vha1VBZHJ2ekV5MVFhSDEwZGVqeWF6RXRHdGxSRm9KLUJZQmoyak9hQU9NYUlqMnhfR3oxMDRQQ1lybXRsTDFsdzY5UE05Yk1JN0RFRmRPZDdh?oc=5", "at": "08-28 22:02", "pre": true}, {"t": "[투데이리포트]디어유, \"단기는 북미 사업 …\" BUY-다올투자증권 - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTE96S0tlNmJCa0VnZGw0SGNCcmItQ3BSRHhCcWhOdlB6eVNXTHJlekFWUnUtRWxOWU9NczlYSTdJYTlYV2NTTXFPUmtFcHhGNmVBQU43eDhCbDI3Yk9ONXY4cnBXdDdsR2dk?oc=5", "at": "08-27 22:50", "pre": true}, {"t": "[투데이리포트]디어유, \"둔화된 본업, 증명…\" BUY-키움증권 - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTE5JSmI2a2xqV1E4MUxWcGVoWGhpYjgzY3BzdlVaNk9Rdzl5R1FfVGM3cHF0U2ZRTlU5OTlRYjFMZmZMd1REaURac2Vtc3VvQ0JqZVlSV25OeERlZ0dCMXZjWlo2dEJtTVVZ?oc=5", "at": "08-25 23:12", "pre": true}, {"t": "[투데이리포트]디어유, \"성장의 무게 중심은…\" BUY-삼성증권 - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTE9pekExTG1zUktPMWlUdGV0RENTM2IzemRtaU5DamdxWjIwRGJRNks1S25QSDZ2T0FXYVJOcXpxQ1kxM29jeVF3TkVoVWxjeGFwMXh1YUlRNEMxTjdBc0xGeW5iWkktaHkw?oc=5", "at": "08-25 23:08", "pre": true}]}, {"code": "263860", "name": "지니언스", "time": "15:00", "price": 17600, "now": 17600, "gap": 0.0, "score": 74, "sc": {"profit": 25, "value": 6, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 2.3, "roe": 17.2, "cap": 159800960000, "p52": 34.7, "ind": "소프트웨어", "fgn": 0, "ins": 3, "fasof": "2026-09-01", "fgn5": -1529, "ins5": 105695, "frate": 26.56, "news": [{"t": "[실적속보]지니언스, 올해 2Q 매출액 132억(+15%) 영업이익 25.7억(+143%) (연결) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFAzNU52RWlFbkxIUk9sZ1dVazA3bUo1QjR2UlhjSllHTkJKZF9BQTQ5elNta3NyeWxZZm8zdnd5TGx2bFZKYllrSE5nd01GeVJfdV91bjNISmhHdTNoUVNBXy13S1ZmZURn?oc=5", "at": "08-31 13:50", "pre": true}, {"t": "[특징주] 지니언스(263860), 반도체 수급 분산…AI 보안 수요 타고 '훨훨' - 인천일보", "s": "인천일보", "u": "https://news.google.com/rss/articles/CBMicEFVX3lxTE1uWFh5QWJud3lfWEliYXhTY1JBZ3F4bFpDNlZzN3FfWWQ0SS10akstdnJaWEpKelQwUXNnbUxIWk5hVG01WmRmdWFmYXpkMjdvWmljZjZVa2dIempVN3pOZjF3STFXT2VRMHJ4d1VJdmo?oc=5", "at": "08-30 17:27", "pre": true}, {"t": "[장중수급포착] 지니언스, 외국인/기관 동시 순매수… 주가 +28.77% - 뉴스핌", "s": "뉴스핌", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE1zR0NsZkFvWFRlWk9kdUE5dzBSZUFtTjladzFUbmlseVVUbFBqb2N3RmlJN1Y0VHpaN1h6MGl2NEZRZm85cjF1bjBhcWtxZlNJLU9YazdBSWdBQkRG?oc=5", "at": "08-28 11:31", "pre": true}, {"t": "[특징주] 지니언스, 사이버 보안 공동 대응 필요성 부각 소식에 따른 급등세 - 와이드경제", "s": "와이드경제", "u": "https://news.google.com/rss/articles/CBMibEFVX3lxTE9qdEw4eEl4RUticjZqVVZLSEF4LUJ3eS10dVhyUHFibXdETmQ0c21CQ1VuaHk4U01hQTNaOXRhd2hGMzNFUWQ0NWhSS2I4amU4RjVETUhnMEloM0hRdHNqSWRSQzF2eTJRdld0UQ?oc=5", "at": "08-28 10:27", "pre": true}, {"t": "AI發 사이버공격 위협에…지니언스·샌즈랩 보안주 강세[특징주] - news.nate.com", "s": "news.nate.com", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE5xMXExZ0YyeC1ubHhYaklzNTktTTB1b1drNmtmZ3dFN2ptUGZpdzV6eHVsSWtXUlZTNkdaR3pLOU1TVHJPZzhkdjNXZXFCeVdMRDVB?oc=5", "at": "08-28 09:28", "pre": true}]}, {"code": "001080", "name": "만호제강", "time": "15:00", "price": 4020, "now": 4055, "gap": 0.87, "score": 73, "sc": {"profit": 10, "value": 25, "timing": 20, "size": 18}, "miss": 0, "loss": false, "mkt": "코스피", "pbr": 0.3, "roe": 1.1, "cap": 142391162800, "p52": 37.6, "ind": "철강", "fgn": 2, "ins": 5, "fasof": "2026-09-01", "fgn5": 5372, "ins5": 32515, "frate": 0.21, "news": [{"t": "만호제강, 약 43억 규모 결산 배당 실시 - edaily.co.kr", "s": "edaily.co.kr", "u": "https://news.google.com/rss/articles/CBMigAFBVV95cUxNdUVGUjR3ZEFJNkJNa1ZaTHRrUXlCb3E0QlNabFUyNzFLOFRURm5DOXY4d3c4TllsUlAxbWx1Z2RhZlpuMmc2RGliSXRPbGZRTEJtMUZTNXZCdnJGLVlxUF8tRUh5SG5FbXh6dEVtdzB4ZlZOTzZJQVZyTDM5OFFxRw?oc=5", "at": "08-31 14:48", "pre": true}]}, {"code": "00279K", "name": "아모레퍼시픽홀딩스3우C", "time": "14:40", "price": 22450, "now": 22350, "gap": -0.45, "score": 73, "sc": {"profit": 10, "value": 20, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스피", "pbr": 0.7, "roe": 4.0, "cap": 158510670000, "p52": 41.3, "ind": "화장품", "fgn": 0, "ins": 1, "fasof": "2026-09-01", "fgn5": 1947, "ins5": 4460, "frate": 4.46, "news": []}, {"code": "282880", "name": "코윈테크", "time": "15:00", "price": 10580, "now": 10500, "gap": -0.76, "score": 73, "sc": {"profit": 10, "value": 20, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.7, "roe": 3.1, "cap": 122787861000, "p52": 22.9, "ind": "기계", "fgn": 1, "ins": 1, "fasof": "2026-09-01", "fgn5": -57852, "ins5": 13588, "frate": 2.44, "news": [{"t": "코윈테크(282880) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiYEFVX3lxTFA0WFBPeUxpYnU0RjE3U2RKZkhFVHBBLTUyQ1BIajFxX0FDS1lpYVNNMGs0UE1lWUJUdDBRQ1EyMHhiMFphRWo2NnhQcFlITEc1TzNxVjZtUWt1N2Y3QVhMSQ?oc=5", "at": "08-27 13:17", "pre": true}, {"t": "코윈테크 수주공시 - ESS 전용 조립 로봇 및 자율주행로봇(AMR) 84.5억원 (매출액대비 5.5 %) - news.nate.com", "s": "news.nate.com", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTFBaNmg4ZDZNSF91VHBkRWxzaVZrcmlvNnJ4M3haTEZkcm10ZDBZSVNJVm5KdE1ON1JsaFdGX1p2WDZpSjE4RzNXczc4NDFuVkhfeDdV?oc=5", "at": "08-27 13:16", "pre": true}, {"t": "코윈테크, 로봇 통합 제어 소프트웨어 RCS 독자 개발 - edaily.co.kr", "s": "edaily.co.kr", "u": "https://news.google.com/rss/articles/CBMigAFBVV95cUxQbnUxaThwdGh3XzZnT01xM1dwVkRqel9mRkxBNjMxaTJESXdubDVXcFZUbjdEanBTRnNtdEMxc3A3ak04VUQxbXBhWWd2dmtrbFhqZTFKRDdkODdoZWFoWm5uWEVuOWJDRUlzdmVLTXhiT19rRk1NdjFmSWFkZXBETQ?oc=5", "at": "08-26 13:52", "pre": true}]}, {"code": "372170", "name": "윤성에프앤씨", "time": "15:00", "price": 22150, "now": 22150, "gap": 0.0, "score": 73, "sc": {"profit": 10, "value": 20, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.9, "roe": 3.5, "cap": 176735913200, "p52": 32.2, "ind": "전자장비와기기", "fgn": 0, "ins": 1, "fasof": "2026-09-01", "fgn5": 6704, "ins5": 35, "frate": 1.29, "news": []}, {"code": "451760", "name": "컨텍", "time": "10:20", "price": 7130, "now": 7140, "gap": 0.14, "score": 73, "sc": {"profit": 15, "value": 20, "timing": 20, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 1.0, "roe": 8.3, "cap": 117865506360, "p52": 6.7, "ind": "우주항공과국방", "fgn": 0, "ins": 1, "fasof": "2026-09-01", "fgn5": -16872, "ins5": -10, "frate": 4.66, "news": []}, {"code": "376290", "name": "씨유테크", "time": "12:40", "price": 2850, "now": 2860, "gap": 0.35, "score": 72, "sc": {"profit": 15, "value": 25, "timing": 20, "size": 12}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.4, "roe": 9.3, "cap": 50500450000, "p52": 65.6, "ind": "핸드셋", "fgn": 1, "ins": 15, "fasof": "2026-09-01", "fgn5": -750, "ins5": 68400, "frate": 70.23, "news": []}, {"code": "093190", "name": "빅솔론", "time": "12:20", "price": 8510, "now": 8630, "gap": 1.41, "score": 70, "sc": {"profit": 20, "value": 20, "timing": 12, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.6, "roe": 14.6, "cap": 166031750150, "p52": 72.9, "ind": "컴퓨터와주변기기", "fgn": 0, "ins": 1, "fasof": "2026-09-01", "fgn5": -9436, "ins5": -821, "frate": 9.61, "news": [{"t": "[실적속보]빅솔론, 3년 중 최고 영업이익 기록, 매출액은 전년동기 대비 48%↑ (연결) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFB6VTg3NjU3cDhMUk5yY0NiM05CM3BOaXlkNFRidVhhaGN2VzNscFBYZGlaVzZSUnp6azJYbkNfVkRWOEZvYlZqYm5iMEN4TU4yLW12VWF1WHdQUWZQbXNfWnRQUDJ1N1Yx?oc=5", "at": "08-26 09:30", "pre": true}]}, {"code": "446540", "name": "메가터치", "time": "15:00", "price": 7290, "now": 7260, "gap": -0.41, "score": 69, "sc": {"profit": 20, "value": 6, "timing": 25, "size": 18}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 2.4, "roe": 11.0, "cap": 211114345860, "p52": 51.8, "ind": "전자장비와기기", "fgn": 0, "ins": 1, "fasof": "2026-09-01", "fgn5": -78993, "ins5": -26371, "frate": 37.37, "news": []}, {"code": "311390", "name": "네오크레마", "time": "09:40", "price": 2540, "now": 2495, "gap": -1.77, "score": 66, "sc": {"profit": 10, "value": 25, "timing": 25, "size": 6}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.4, "roe": 3.2, "cap": 31571203555, "p52": 5.6, "ind": "식품", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -1079, "ins5": 0, "frate": 3.59, "news": []}, {"code": "125490", "name": "한라캐스트", "time": "15:00", "price": 11160, "now": 11010, "gap": -1.34, "score": 65, "sc": {"profit": 15, "value": 0, "timing": 25, "size": 25}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 3.5, "roe": 6.8, "cap": 401890895520, "p52": 31.6, "ind": "자동차부품", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -225432, "ins5": -64004, "frate": 1.68, "news": [{"t": "한라캐스트 로봇 밸류체인 본격 진입…9207억원 수주잔고 기반 성장 가속 - cbci.co.kr", "s": "cbci.co.kr", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFBEdVNlWlE5NU44VUNLS1VZaWt1czA1TFQwUWF4SXNQZUt3T3lJaGpoVHh2eDlSTzdHVEktZWlrbmRfT0d3NjNFaHQxWHozcnZvX2NmMzl1bmpZT1p0bHBMVVpJYTZrU1ZI?oc=5", "at": "09-01 00:10", "pre": true}, {"t": "[리포트 브리핑]한라캐스트, '전장 매커니즘에서 휴머노이드 핵심 공급사로' Not Rated - 부국증권 - newspim.com", "s": "newspim.com", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE1iZ3BOdXBwX1I2SXNaTU5QV2dNR0prc3VmRFpzTTlOQ01xNHFDSUtULVN1RWNvRTBJVnA5OEF5THFSZ3pwQ1pXcmZSNDZVOVRiUXlsR1k1RHlLblR5?oc=5", "at": "08-31 10:14", "pre": true}]}, {"code": "019170", "name": "신풍제약", "time": "15:00", "price": 10500, "now": 10440, "gap": -0.57, "score": 62, "sc": {"profit": 0, "value": 12, "timing": 25, "size": 25}, "miss": 0, "loss": true, "mkt": "코스피", "pbr": 2.0, "roe": -0.31, "cap": 547249369680, "p52": 43.1, "ind": "제약", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": -287322, "ins5": -86565, "frate": 5.04, "news": [{"t": "신풍제약 주가 급등흐름…양대지수 약세에도 - cbci.co.kr", "s": "cbci.co.kr", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTE85eFRkdjAybmxxX2dmdlF4OHIzYXI3S0JTMm8xZTdFTGx0dWJ3bEZ5dEU0OWstT0tGa2U5SWdRVU84MEdHNXhSNWtaUnNvOUJzWkRkSkFrdkE5emNmWmlXT3MzRllRbXpi?oc=5", "at": "08-31 09:22", "pre": true}, {"t": "[마감분석] 신풍제약, 수급 개선 속 14%대 급등 마감 : 한국증시 - news.jkn.co.kr", "s": "news.jkn.co.kr", "u": "https://news.google.com/rss/articles/CBMiSkFVX3lxTFBSYWRIMUZvOEZjVUM5dEMxQWczbnA1T1VoLUhuUVQ1ZGhidVYybTZrZVN4Mk93THVsTjBwcUY1b0hhYTlWQ2pETU1B?oc=5", "at": "08-28 16:47", "pre": true}, {"t": "[특징주] 신풍제약, 코로나19 재확산 조짐에 급등세 - 와이드경제", "s": "와이드경제", "u": "https://news.google.com/rss/articles/CBMibEFVX3lxTE14eDVsdVlHYzF0QlJoWWYxTktHRnhkMml1U1ZEVDVoRC1OdDRSRjN4Uy1mdm9tR3VRNmhDZjAxaFZWLU4wRUJwMHZlZHYwMkd3M1JDT3J1NC1qZXdHeGMyald4MFRUQ0FGUDB3cA?oc=5", "at": "08-28 11:13", "pre": true}, {"t": "[특징주] 신풍제약, 호재 없는 급등세에 ‘단기 과열’ 경고등 : 한국증시 - news.jkn.co.kr", "s": "news.jkn.co.kr", "u": "https://news.google.com/rss/articles/CBMiSkFVX3lxTFByUEpOU0hUdlAxOG14Qmw2MWtRck1jbFhpMEZhOGRDNjFPZVg4OTVfZkxNaktuNlRRdC1KUTBQTlNuOFMycjRmRGZB?oc=5", "at": "08-28 10:59", "pre": true}, {"t": "코로나株 꿈틀…신풍제약 또 20%대 급등 [핫종목] - v.daum.net", "s": "v.daum.net", "u": "https://news.google.com/rss/articles/CBMiVEFVX3lxTE1LMGZRUnV4S29BSERjZXM3dzAxdTAzX05mTnNIbVhTNko2eDdLd1ZxN0diT2s4MUNDQkN4QnJjVzN3Q2hIZEZwUjFCaUg3NlpHOWFaUg?oc=5", "at": "08-28 09:52", "pre": true}, {"t": "코로나株 꿈틀…신풍제약 또 20%대 급등 [핫종목] - 네이트", "s": "네이트", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTFBtWEtBLW95amJkNFh0V2h6VDg3V3M0aWV2dGhhUXJHZkpOUnJ1VWhWdGkwWE5SQ2FkWGhiMGFyaUE4dFB6YXRNdklGbGtKQjgyV0Zv?oc=5", "at": "08-28 09:51", "pre": true}]}, {"code": "025320", "name": "시노펙스", "time": "10:40", "price": 4020, "now": 3990, "gap": -0.75, "score": 62, "sc": {"profit": 0, "value": 12, "timing": 25, "size": 25}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 2.0, "roe": -0.02, "cap": 367886789970, "p52": 18.7, "ind": "핸드셋", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -189254, "ins5": -177398, "frate": 0.69, "news": []}, {"code": "002710", "name": "TCC스틸", "time": "15:00", "price": 11600, "now": 11560, "gap": -0.34, "score": 62, "sc": {"profit": 0, "value": 12, "timing": 25, "size": 25}, "miss": 0, "loss": true, "mkt": "코스피", "pbr": 1.2, "roe": -7.0, "cap": 303030337320, "p52": 27.5, "ind": "철강", "fgn": 0, "ins": 4, "fasof": "2026-09-01", "fgn5": -37811, "ins5": 7836, "frate": 5.35, "news": [{"t": "TCC스틸(002710) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE9QM25id0RyTENzV0EwbjdEanNNcHh2MUxYdVJFRVNkdEpBLUVyRFE2dVpzVThyeWdtOFh1Wi1uQ0ItNzJJYlJYLWZ5ZzBmdXltYmQwTmZBTENpNHEyS3U3Qg?oc=5", "at": "08-27 11:13", "pre": true}]}, {"code": "418670", "name": "TIGER 글로벌AI사이버보안", "time": "15:00", "price": 18215, "now": 18150, "gap": -0.36, "score": 61, "sc": {"profit": null, "value": null, "timing": 25, "size": 12}, "miss": 2, "loss": false, "mkt": "코스피", "pbr": null, "roe": null, "cap": 52998000000, "p52": 83.3, "ind": null, "fgn": 0, "ins": 2, "fasof": "2026-09-01", "fgn5": 4475, "ins5": -40689, "frate": 0.7, "news": []}, {"code": "389470", "name": "인벤티지랩", "time": "15:00", "price": 29350, "now": 29200, "gap": -0.51, "score": 60, "sc": {"profit": 10, "value": 0, "timing": 25, "size": 25}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 4.4, "roe": 4.2, "cap": 388585073600, "p52": 8.1, "ind": "제약", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -18781, "ins5": -16971, "frate": 11.29, "news": [{"t": "[실적속보]인벤티지랩, 올해 2Q 매출액 1.8억(-80%) 영업이익 -103억(적자지속) (연결) - 씽크풀 AI", "s": "씽크풀 AI", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFBjSFhPbTZ2Q1VRaGV0TGtmc1ZPd2RKVHBqb256ZmhuS0xCLUxlZ2g5ckl2VXFVYXlrcExxRHBQbE1KSHgtTXdQVWVGWGpDTW82bFJmbl9GazQ5U0xYbElmd2hwRUIzV1kw?oc=5", "at": "08-30 07:25", "pre": true}]}, {"code": "048430", "name": "유라테크", "time": "10:20", "price": 5900, "now": 5970, "gap": 1.19, "score": 59, "sc": {"profit": 10, "value": 25, "timing": 12, "size": 12}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.4, "roe": 4.9, "cap": 68774400000, "p52": 18.1, "ind": "자동차부품", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -11, "ins5": 0, "frate": 2.08, "news": []}, {"code": "241690", "name": "유니테크노", "time": "15:00", "price": 2700, "now": 2720, "gap": 0.74, "score": 57, "sc": {"profit": 0, "value": 25, "timing": 20, "size": 12}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.4, "roe": -0.08, "cap": 66560320320, "p52": 20.0, "ind": "자동차부품", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": 10039, "ins5": -16205, "frate": 1.85, "news": []}, {"code": "078590", "name": "휴림에이텍", "time": "15:00", "price": 3150, "now": 3140, "gap": -0.32, "score": 56, "sc": {"profit": 0, "value": 25, "timing": 25, "size": 6}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.4, "roe": -23.3, "cap": 31374311660, "p52": 9.3, "ind": "자동차부품", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -7563, "ins5": 0, "frate": 0.0, "news": []}, {"code": "203450", "name": "유니온바이오메트릭스", "time": "11:00", "price": 2510, "now": 2515, "gap": 0.2, "score": 56, "sc": {"profit": 10, "value": 20, "timing": 20, "size": 6}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.7, "roe": 3.0, "cap": 35408702605, "p52": 19.8, "ind": "전자장비와기기", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -3930, "ins5": 0, "frate": 8.72, "news": [{"t": "유니온바이오메트릭스, 대표이사 2억 규모 지분 장내 매수 - edaily.co.kr", "s": "edaily.co.kr", "u": "https://news.google.com/rss/articles/CBMigAFBVV95cUxNbnVQSkZEZ1lqcXl4UFZxYjA1SVRxMVJHbkxwUWJQeC1Qa002U1BnVkZ4N2ZJaU9KSHlSQjlUZEtDMkM3TzBkTDUyMG1MV1I0cXhpNE5rdWpZenE2UF9NOEloLVpjUkJsX2Q0eFNETjRMaUpRdnpLc3JGTUM5Q3FWaA?oc=5", "at": "08-28 08:58", "pre": true}, {"t": "유니온바이오메트릭스 사실상지배주주 신요식 대표이사, 소유 주식 수량 7만4756주 증가…소유 지분율 0.53%p 상승 - 디지털투데이", "s": "디지털투데이", "u": "https://news.google.com/rss/articles/CBMic0FVX3lxTE1NZWFKUGlRcjAwNDJTaS1GS3ozQm5MUDZtcHhSNDU1cWZ3SnY5X0hJTG1nbXh1SXh5M2s2T2dKMGZHamFtTHlTQktsbks4N1BLbDhPblU2Z2duckNEMDBaWkRsV3pITEY5MzFmOXlETlI2Nkk?oc=5", "at": "08-27 10:53", "pre": true}]}, {"code": "022220", "name": "티케이지애강", "time": "15:00", "price": 893, "now": 893, "gap": 0.0, "score": 56, "sc": {"profit": 0, "value": 25, "timing": 25, "size": 6}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.5, "roe": -14.8, "cap": 46252559047, "p52": 82.7, "ind": "건축제품", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": 50974, "ins5": 400, "frate": 1.23, "news": [{"t": "[ET특징주] 티케이지애강, 자진 상폐 위한 2차 공개매수… 주가 上 - 전자신문", "s": "전자신문", "u": "https://news.google.com/rss/articles/CBMiTkFVX3lxTE5ZN3FfSUZpa3JiRFlTeTlmWUVsS3FjUW5lclBRaXhmSlhRRmFfZ3BrOUdmeDZKUXhkNDUtRXM5Yy1Ud1Zid3ItNWNKT1h0QQ?oc=5", "at": "08-31 11:26", "pre": true}, {"t": "'동전株' 티케이지애강, 자진 상장폐지 추진에 '上' [핫종목] - 뉴스1", "s": "뉴스1", "u": "https://news.google.com/rss/articles/CBMiZEFVX3lxTE83Zmt1TWdhSzRQd0Zfdl9waUg2SkZwXzVINHY1SUVXdER6S3NEbjJ4LUg2NzdtaXpvUFhjVWpZYTU5Q0hEQjRMb2RMRHRlZWstd29VRlJVdmdfZWgwanZQQ3pxdGbSAWRBVV95cUxPN2ZrdU1nYUs0UHdGX3ZfcGlINkpGcF81SDR2NUlFV3REektzRG4yeC1INjc3bWl6b1BYY1VqWWE1OUNIREI0TG9kTER0ZWVrLXdvVUZSVXZnX2VoMGp2UEN6cXRm?oc=5", "at": "08-31 10:00", "pre": true}, {"t": "[특징주] 티케이지애강, 자진 상폐 위한 2차 공개매수에 상한가 - 조선비즈 - Chosunbiz", "s": "Chosunbiz", "u": "https://news.google.com/rss/articles/CBMinAFBVV95cUxPSlBvQzRqeVEwRnhVbVFMMWlaaktEcjdxOGpTRkN1blVsWHRpRm1vekVuX0puYk0yWjNWNTdvRGpwRklyS1M2Y1NYOG1oUEZPek5HaS0yUm95Tml2bW1kTnpwdDUwTkpFLVRBQXNzamlrZTNfaEFnUTMtQ213UjdxYWJCTF9VRk9VX0VyTU12dEhQZ1puVE5odWo0dTXSAZwBQVVfeXFMT0pQb0M0anlRMEZ4VW1RTDFpWmpLRHI3cThqU0ZDdW5VbFh0aUZtb3pFbl9KbmJNMlozVjU3b0RqcEZJcktTNmNTWDhtaFBGT3pOR2ktMlJveU5pdm1tZE56cHQ1ME5KRS1UQUFzc2ppa2UzX2hBZ1EzLUNtd1I3cWFiQkxfVUZPVV9Fck1NdnRIUGdablROaHVqNHU1?oc=5", "at": "08-31 09:43", "pre": true}]}, {"code": "0181L0", "name": "SOL 미국우주항공TOP10", "time": "15:00", "price": 6880, "now": 6900, "gap": 0.29, "score": 56, "sc": {"profit": null, "value": null, "timing": 20, "size": 12}, "miss": 2, "loss": false, "mkt": "코스피", "pbr": null, "roe": null, "cap": 55890000000, "p52": 7.8, "ind": null, "fgn": 2, "ins": 0, "fasof": "2026-09-01", "fgn5": -3742, "ins5": -53049, "frate": 0.0, "news": []}, {"code": "194480", "name": "데브시스터즈", "time": "15:00", "price": 17610, "now": 17450, "gap": -0.91, "score": 55, "sc": {"profit": 0, "value": 12, "timing": 25, "size": 18}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 1.3, "roe": -25.6, "cap": 212351667500, "p52": 9.4, "ind": "게임엔터테인먼트", "fgn": 0, "ins": 1, "fasof": "2026-09-01", "fgn5": 64529, "ins5": 8098, "frate": 2.75, "news": [{"t": "빠른 '방치형' 개발 공식 통했다…쿠키런: 크럼블 초반 흥행 - news.nate.com", "s": "news.nate.com", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE5wN2RBM2xLejBXMjFQSHVJQlgyZlNoaUJrNGkyZ1F6enFzenpKdXFRRkF2OWlpNmIwano3SUFUaDVBUmJUSEt2Q3RHaWVya2pwRXN3?oc=5", "at": "09-01 16:03", "pre": true}, {"t": "특징주, 데브시스터즈-캐릭터상품 테마 상승세에 9.29% ↑ - mk.co.kr", "s": "mk.co.kr", "u": "https://news.google.com/rss/articles/CBMiRkFVX3lxTE1WQVNXMkNzTFR1TEZRU0czTkNjcklQVVNEVWJBYUZ6cEZGSGc2NDFWMjNlckg0b3VqUTJHZHVCNmRQeGl0LXc?oc=5", "at": "09-01 13:43", "pre": true}, {"t": "특징주, 데브시스터즈-캐릭터상품 테마 상승세에 9.29% ↑ - 매일경제 마켓", "s": "매일경제 마켓", "u": "https://news.google.com/rss/articles/CBMiUkFVX3lxTFB6ZW9ZeWs4RXpETWp5aUdLTFplVkNmNlQ0UGF2YTU1cEdObDRaQW5tUWNrYzFqNW1YbVVhVFcyUU1seVllNUNoU3NMVHl0MlhWblE?oc=5", "at": "09-01 13:43", "pre": true}, {"t": "데브시스터즈, 로블록스에 '쿠키런 카드 게임' 연내 출시 - 매일경제 마켓", "s": "매일경제 마켓", "u": "https://news.google.com/rss/articles/CBMiUkFVX3lxTE5rWFNRTkxHWnYxd1RsT1dub0kzMnVHQkpXU1VxV1p5TGFRSXIzLU9zWV85a1d2VDVLVWlXUXlHbU9NT0RGOVhxV2h0MlJheXluRHc?oc=5", "at": "08-31 04:50", "pre": true}, {"t": "[장중수급포착] 데브시스터즈, 외국인/기관 동시 순매수… 주가 +8.69% - 뉴스핌", "s": "뉴스핌", "u": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE8wSkNtYUhuU081SFVDRFlOWHlTTzc5aFFDSy0zUGMzTHpkTlpWdE5FdzFMaVRrRVdTVGFBTGtMQV9pWm9Ed1p3aXRRZ2lkUE9Id0NsREx5N09XMjM0?oc=5", "at": "08-28 10:19", "pre": true}, {"t": "'쿠키런: 크럼블', 출시 한 달 만에 매출 200억 돌파 - 파이낸셜뉴스", "s": "파이낸셜뉴스", "u": "https://news.google.com/rss/articles/CBMiWkFVX3lxTE9FeEVEVldab0dWRVZTNVM3NUEwcTc3bzFpRWJkLXZFcm5Lci1adS1JUTdBM1ZDaklwVnZRTVI3ZUVFVzBOSmFvTWI3bWc1VHNqRUxIMnJCWEhWQQ?oc=5", "at": "08-28 10:11", "pre": true}, {"t": "[특징주] 데브시스터즈, 쿠키런 매출 200억원 돌파 소식에 10% 강세 - 조선비즈 - Chosunbiz", "s": "Chosunbiz", "u": "https://news.google.com/rss/articles/CBMiiAFBVV95cUxPaEp2Ukx2cWJPNWloaEJsN3ZtOE5ZM3ZrTmg3M2FvTnJaUmxWUnlWWHJEdi10cDNMLVBsSF9XSTZOY0xNWmRHTXJWMDFwZVpqVEpkZ01WNVdFX0xiczRHbWFiUVlDOWlCRzdZWDZ2b2xNNVVmTWxySVUtREVoTnI4eWh0MTFYM1JT0gGcAUFVX3lxTE1yelEybnFYR3g0WHlyc21EQVNQQ3NNOTdCVW9BZTM1cHBhRGxMczl1TkxvNEU2RENoc204TUQ4d3VsM0FiOEZva0p4ckExcTFicmRjOTkzdUhkZkhUSjdrZklUT1BhVG44RnF4TVcxN3FvX1lfcnJhTzZBNXlHQ05Xems5M0t5dzhJSFlIcjIwV0lfRUpKM0NueXFtVw?oc=5", "at": "08-28 09:34", "pre": true}, {"t": "쿠키런: 크럼블, 출시 한달 앞두고 누적 매출 200억원 돌파 - edaily.co.kr", "s": "edaily.co.kr", "u": "https://news.google.com/rss/articles/CBMigAFBVV95cUxNWjJNdDF3ZVhON2dVV1p2c2R0bTNUck5qUDNZbkx3Qzl3QjM5Mk5PdDZQdTlvS2lXVlpaS0N2R2c0Vi1pY3NIV0w5WXJTQjhsc0dMVkFndExfQ0FiQXR6TEplNzRCRFJqTkdtWm1KdUJvYmEwSTJRWWl3MFN5dzFHQw?oc=5", "at": "08-28 09:19", "pre": true}, {"t": "[업앤다운]게임주 하락…데브시스터즈↑·크래프톤↓ - NSP통신", "s": "NSP통신", "u": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE9Oa0drNnpPRkFmYkVZemF1SmZKTTNKbWdHMF9BUkNnaUZSMXZwUkFtN2h0bTJCZFJqazlZTVpZOVFPMHdkZHUzaEh0QjFvdEVsbExtbzQweXY3RU9jVkxlNA?oc=5", "at": "08-27 17:16", "pre": true}, {"t": "데브시스터즈, 쿠키런: 크럼블 길드 토벌전 추가 - NSP통신", "s": "NSP통신", "u": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE14N25laEg5ekM2RGJ4Nzk3WXZLWlA5TmV6OEx5MXpNUzczU2Z1UzJDLWRPNVF1amc2QndOcEk5T253ZmZGLWFCYjcxS2hUcjB2UW9OYUtvamx1ZlpIaFlBcg?oc=5", "at": "08-27 14:36", "pre": true}, {"t": "데브시스터즈 임성택 최고재무책임자(CFO), 소유 주식 수량 3600주 증가…소유 지분율 0.03%p 상승 - 디지털투데이", "s": "디지털투데이", "u": "https://news.google.com/rss/articles/CBMic0FVX3lxTE0tSy1iOGo5TldxQzFnTXBfNF9YSjBHdnFJRnFEN04wekZLUERiLXhCY1Z4NjhLTkhoNlZQS0dDYkNkaUtnQURWMVNvUk9wRE4xX2hMLTBnZTJ4dDhzYjZ2WlVBQzMxWXZfQThOaUJUWjh3eVk?oc=5", "at": "08-26 16:35", "pre": true}]}, {"code": "192410", "name": "오늘이엔엠", "time": "15:00", "price": 5300, "now": 5190, "gap": -2.08, "score": 55, "sc": {"profit": null, "value": 0, "timing": 25, "size": 18}, "miss": 1, "loss": true, "mkt": "코스닥", "pbr": 12.1, "roe": null, "cap": 130714867710, "p52": 52.9, "ind": "통신장비", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -114984, "ins5": 0, "frate": 0.05, "news": []}, {"code": "097870", "name": "효성오앤비", "time": "10:40", "price": 4565, "now": 4615, "gap": 1.1, "score": 53, "sc": {"profit": 10, "value": 25, "timing": 12, "size": 6}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.5, "roe": 0.81, "cap": 39181350000, "p52": 18.2, "ind": "화학", "fgn": 0, "ins": 1, "fasof": "2026-09-01", "fgn5": 803, "ins5": 1, "frate": 2.56, "news": []}, {"code": "073540", "name": "에프알텍", "time": "14:20", "price": 2245, "now": 2245, "gap": 0.0, "score": 50, "sc": {"profit": 0, "value": 25, "timing": 25, "size": 0}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.4, "roe": -1.2, "cap": 25593000000, "p52": 8.5, "ind": "통신장비", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": 8598, "ins5": 675, "frate": 2.37, "news": []}, {"code": "0166S0", "name": "PLUS K제조업핵심기업액티브", "time": "11:40", "price": 10860, "now": 10980, "gap": 1.1, "score": 48, "sc": {"profit": null, "value": null, "timing": 12, "size": 12}, "miss": 2, "loss": false, "mkt": "코스피", "pbr": null, "roe": null, "cap": 58743000000, "p52": 38.1, "ind": null, "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": 2620, "ins5": 41234, "frate": 0.14, "news": []}, {"code": "031310", "name": "아이즈비전", "time": "12:00", "price": 955, "now": 971, "gap": 1.68, "score": 47, "sc": {"profit": 10, "value": 25, "timing": 12, "size": 0}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.2, "roe": 2.5, "cap": 28883998121, "p52": 8.2, "ind": "통신장비", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -2851, "ins5": 0, "frate": 2.95, "news": []}, {"code": "142760", "name": "모아라이프플러스", "time": "15:00", "price": 989, "now": 970, "gap": -1.92, "score": 45, "sc": {"profit": 0, "value": 20, "timing": 25, "size": 0}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.8, "roe": -51.5, "cap": 20450985300, "p52": 9.3, "ind": "제약", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -166503, "ins5": -5, "frate": 0.0, "news": [{"t": "모아라이프플러스 기술이전 신약후보, 우주 근손실 美특허 확대 - 서울경제", "s": "서울경제", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE9lRzZoMWJqek1mQlBuSWp4STAzU3VJRnpOWkc5allQTUFXTGpnamhnZG9EaFlqRllrcjNOS2dyQVJuTFRIZXFLYzcyZmZ6N3A1SVdn0gFTQVVfeXFMT2VHNmgxYmp6TWZCUG5JanhJMDNTdUlGek5aRzlqWVBNQVdMamdqaGdkb0RoWWpGWWtyM05LZ3JBUm5MVEhlcUtjNzJmZno3cDVJV2c?oc=5", "at": "09-01 13:30", "pre": true}, {"t": "모아라이프플러스, 액면병합 후 '上'…관리종목 우려는 여전 [핫종목] - 네이트", "s": "네이트", "u": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE1tMmx2S0VsdDNlYlEyb0VOeERzRGZ3MS1WV09rREo1VG1PTWVhUGpVcHZ1b0pKdS10MlpnQng5NUxQSGE1ekc1UF9HQXZlaTE3RDZB?oc=5", "at": "08-31 11:13", "pre": true}, {"t": "모아라이프플러스, 액면병합 후 '上'…관리종목 우려는 여전 [핫종목] - 뉴스1", "s": "뉴스1", "u": "https://news.google.com/rss/articles/CBMiZEFVX3lxTE5zRVh0TVBiMUhxMWZVdDdkRTZrbVZ6ZEVuTW8tM2g1cFVXT0R1RkV5VUttaWR0QThpTHZXTjlfcmVYRG5GSWk4SVp3b1RNR2FPck1NWHFBSmp1OTZMNGhxdkszS2jSAWRBVV95cUxOc0VYdE1QYjFIcTFmVXQ3ZEU2a21WemRFbk1vLTNoNXBVV09EdUZFeVVLbWlkdEE4aUx2V045X3JlWERuRklpOElad29UTUdhT3JNTVhxQUpqdTk2TDRocXZLM0to?oc=5", "at": "08-31 11:12", "pre": true}, {"t": "액면병합 후 첫 거래…모아라이프플러스 '상한가'[특징주] - 네이트", "s": "네이트", "u": "https://news.google.com/rss/articles/CBMiakFVX3lxTE9CenZoOGtoalI4U3oyMGhlX093ZllGc3RyOElaQjN3Y3ZrNGZxcEdOWDhKb085QUxlcUJVRllSQXJwNGQ4ZF9xWlpDT0RzMTRRQk1wQTdhdFNFWUE2TGFCLUlBalp5NHRkR1E?oc=5", "at": "08-31 09:38", "pre": true}, {"t": "액면병합 후 첫 거래…모아라이프플러스 '상한가'[특징주] - edaily.co.kr", "s": "edaily.co.kr", "u": "https://news.google.com/rss/articles/CBMigAFBVV95cUxPclZsVFN6SzJhZ2lWMFdSaU9XcUhHSnhORHhjMDFoZWUzY3B5UU5YRWkyUmdrVjZqa2pVZjRzeVpwODZHMERzbXc3SnROa3pmMW5QQ2Q5RTJnMW5fWWNEeVowSlY5c0JPdGhaMExiR1N0YkMyYnB3c0NkRENVMWRCcw?oc=5", "at": "08-31 09:36", "pre": true}, {"t": "[특징주] 모아라이프플러스, 액면병합 후 거래재개 첫날 ‘상한가’ - 조선비즈 - Chosunbiz", "s": "Chosunbiz", "u": "https://news.google.com/rss/articles/CBMinAFBVV95cUxPVFIyOTJ5VTVPOXVkbzgwR3RKd2lqdDhvMkdqNVh2WXB3ZEMxdjAxUUVQX3FnalVSazhjQVl3ZkRQRm9RSG1NMUZIYlN0Z3BydVEzS2RVcHY3MGlxRE53SF9DT0piY2xWX0N1TjNVRHRqRHplMFVUWVJ5U0VBam5aWWpoOFBSMy01LTR4OUgxWnFlejZJUDVOdFpqVkLSAZwBQVVfeXFMT1RSMjkyeVU1Tzl1ZG84MEd0SndpanQ4bzJHajVYdllwd2RDMXYwMVFFUF9xZ2pVUms4Y0FZd2ZEUEZvUUhtTTFGSGJTdGdwcnVRM0tkVXB2NzBpcUROd0hfQ09KYmNsVl9DdU4zVUR0akR6ZTBVVFlSeVNFQWpuWllqaDhQUjMtNS00eDlIMVpxZXo2SVA1TnRaalZC?oc=5", "at": "08-31 09:28", "pre": true}, {"t": "모아라이프플러스, 액면병합 후 첫날 상한가 - TradingView", "s": "TradingView", "u": "https://news.google.com/rss/articles/CBMiaEFVX3lxTE0tVWRtVkc2TElSSUxtdGI5MHotQU1RMXdEMXBabk5FYm00dWJ0amNreW5tc19mQmJ5Q1RLaXEwam1acUFVVW1renVrdUFrZk9oZ3B1STI5dENIOUg4Xzh0Ynhxa3ZyNDNF?oc=5", "at": "08-31 09:25", "pre": true}, {"t": "모아라이프플러스, 액면병합 주권 변경상장으로 매매거래정지 해제 - 코메디닷컴", "s": "코메디닷컴", "u": "https://news.google.com/rss/articles/CBMiQkFVX3lxTE5mTGNlNmd3aVlFX0tMRU9NOGw1RXFvVWRXU0tOblV6elFqVWxRdVFCMW5COFhlOVNrdm1BZUhIbXBrdw?oc=5", "at": "08-30 09:11", "pre": true}]}, {"code": "009730", "name": "이렘", "time": "15:00", "price": 1979, "now": 1993, "gap": 0.71, "score": 45, "sc": {"profit": 0, "value": 25, "timing": 20, "size": 0}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.4, "roe": -44.6, "cap": 15895177479, "p52": 11.8, "ind": "비철금속", "fgn": 0, "ins": 0, "fasof": "2026-09-01", "fgn5": -20213, "ins5": 0, "frate": 0.0, "news": []}, {"code": "153490", "name": "우리이앤엘하루틴", "time": "15:00", "price": 2920, "now": 2975, "gap": 1.88, "score": 43, "sc": {"profit": 0, "value": 25, "timing": 12, "size": 6}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.4, "roe": -9.4, "cap": 30630600000, "p52": 43.5, "ind": "디스플레이장비및부품", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": 12069, "ins5": 6500, "frate": 2.19, "news": [{"t": "[공시] 금호전기·넥사다이내믹스·탑코미디어 '거래정지 예고' 등...46건 - 뉴스티앤티", "s": "뉴스티앤티", "u": "https://news.google.com/rss/articles/CBMiakFVX3lxTE5JTG1feC1WYkkwRUp6Nm9EQ053T3Iydi1UTjVQYkNQc05LY2lGSnY5LVVPT1FmRl9JYl9PYUJ1cG0zbVBsaDZEalFpSkM4Wm9WTXdTVFNLRExGb2I1OENjSTRHQ3VBaDFLQ1E?oc=5", "at": "08-31 20:55", "pre": true}]}, {"code": "051630", "name": "진양화학", "time": "15:00", "price": 1400, "now": 1415, "gap": 1.07, "score": 42, "sc": {"profit": 10, "value": 20, "timing": 12, "size": 0}, "miss": 0, "loss": false, "mkt": "코스피", "pbr": 0.7, "roe": 4.6, "cap": 29998000000, "p52": 20.3, "ind": "화학", "fgn": 0, "ins": 2, "fasof": "2026-09-01", "fgn5": -267268, "ins5": -4143, "frate": 0.68, "news": []}, {"code": "03481K", "name": "해성산업1우", "time": "11:40", "price": 6070, "now": 6150, "gap": 1.32, "score": 37, "sc": {"profit": 0, "value": 25, "timing": 12, "size": 0}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.3, "roe": -7.9, "cap": 8471335950, "p52": 7.9, "ind": "종이와목재", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": 1, "ins5": 0, "frate": 2.68, "news": []}, {"code": "469750", "name": "아이비젼웍스", "time": "14:20", "price": 920, "now": 987, "gap": 7.28, "score": 36, "sc": {"profit": 10, "value": 20, "timing": 0, "size": 6}, "miss": 0, "loss": false, "mkt": "코스닥", "pbr": 0.9, "roe": 2.6, "cap": 34008546747, "p52": 30.0, "ind": "전기제품", "fgn": 1, "ins": 0, "fasof": "2026-09-01", "fgn5": -3280, "ins5": 13199, "frate": 1.77, "news": []}, {"code": "101400", "name": "엔시트론", "time": "11:40", "price": 1842, "now": 1900, "gap": 3.15, "score": 25, "sc": {"profit": 0, "value": 20, "timing": 5, "size": 0}, "miss": 0, "loss": true, "mkt": "코스닥", "pbr": 0.6, "roe": -4.5, "cap": 22309397200, "p52": 19.1, "ind": "반도체와반도체장비", "fgn": 1, "ins": 1, "fasof": "2026-09-01", "fgn5": 18601, "ins5": -4181, "frate": 1.37, "news": [{"t": "엔시트론, 임시주주총회서 기타비상무이사 2명·독립이사 1명 선임 - 디지털투데이", "s": "디지털투데이", "u": "https://news.google.com/rss/articles/CBMic0FVX3lxTE50RFk1a0RDNEVoMm1RU0RuMWFzbEpHalJJX09ha2tJcHk4Z1FEYXdvUGdtNi1wck5WVmNtWXRySXZaNFZyVV9mRW9HbU1RSVl2RTVTWXhCNkd5Z3RxS0t0enIzMlVYT1I3c3dCSDV1MHU5N3M?oc=5", "at": "08-28 17:08", "pre": true}]}], "sells": [{"code": "323990", "name": "박셀바이오", "time": "15:20", "price": 5180, "profit": 26.34, "mkt": "코스닥", "now": 5070}, {"code": "475460", "name": "미트박스", "time": "15:20", "price": 6770, "profit": 12.09, "mkt": "코스닥", "now": 6800}, {"code": "032860", "name": "더라미", "time": "15:00", "price": 2850, "profit": -12.84, "mkt": "코스닥", "now": 2770}, {"code": "473330", "name": "SOL 미국30년국채커버드콜(합성)", "time": "14:40", "price": 7870, "profit": -12.12, "mkt": "코스피", "now": 7870}, {"code": "019180", "name": "티에이치엔", "time": "14:40", "price": 5270, "profit": -12.02, "mkt": "코스피", "now": 5250}, {"code": "0073X0", "name": "FOCUS 알리바바미국채커버드콜혼합", "time": "14:40", "price": 8840, "profit": -14.91, "mkt": "코스피", "now": 8810}, {"code": "218410", "name": "RFHIC", "time": "14:20", "price": 44450, "profit": -15.81, "mkt": "코스닥", "now": 45050}, {"code": "274090", "name": "켄코아에어로스페이스", "time": "14:20", "price": 9830, "profit": -17.19, "mkt": "코스닥", "now": 9870}, {"code": "064850", "name": "에프앤가이드", "time": "14:20", "price": 16220, "profit": -23.67, "mkt": "코스닥", "now": 16130}, {"code": "214260", "name": "라파스", "time": "14:20", "price": 8150, "profit": -14.48, "mkt": "코스닥", "now": 8250}, {"code": "354320", "name": "알멕", "time": "14:20", "price": 28150, "profit": -15.97, "mkt": "코스닥", "now": 28600}, {"code": "464470", "name": "PLUS 미국채30년액티브", "time": "14:20", "price": 47295, "profit": -12.09, "mkt": "코스피", "now": 47300}, {"code": "072950", "name": "빛샘전자", "time": "14:20", "price": 8440, "profit": -18.92, "mkt": "코스닥", "now": 8470}, {"code": "482030", "name": "KoAct 반도체&2차전지핵심소재액티브", "time": "14:20", "price": 9150, "profit": 18.45, "mkt": "코스피", "now": 9235}, {"code": "012205", "name": "계양전기우", "time": "14:20", "price": 5350, "profit": -21.67, "mkt": "코스피", "now": 5510}, {"code": "004710", "name": "한솔테크닉스", "time": "14:20", "price": 6590, "profit": -12.95, "mkt": "코스피", "now": 6640}, {"code": "071200", "name": "인피니트헬스케어", "time": "14:20", "price": 9625, "profit": 2.61, "mkt": "코스닥", "now": 9610}, {"code": "090460", "name": "비에이치", "time": "14:20", "price": 21700, "profit": 26.6, "mkt": "코스피", "now": 22100}, {"code": "494120", "name": "큐리오시스", "time": "14:20", "price": 8670, "profit": -18.74, "mkt": "코스닥", "now": 8770}, {"code": "078350", "name": "한양디지텍", "time": "14:20", "price": 20000, "profit": -14.53, "mkt": "코스닥", "now": 20200}, {"code": "098460", "name": "고영", "time": "14:20", "price": 27900, "profit": -13.08, "mkt": "코스닥", "now": 28050}, {"code": "026040", "name": "제이에스티나", "time": "14:00", "price": 2315, "profit": 8.94, "mkt": "코스닥", "now": 2225}, {"code": "403850", "name": "더핑크퐁컴퍼니", "time": "13:40", "price": 13890, "profit": 15.46, "mkt": "코스닥", "now": 13830}, {"code": "483650", "name": "달바글로벌", "time": "13:40", "price": 208500, "profit": -15.07, "mkt": "코스피", "now": 207500}, {"code": "039860", "name": "나노엔텍", "time": "13:40", "price": 4155, "profit": 6.4, "mkt": "코스닥", "now": 4170}, {"code": "0007C0", "name": "아크릴", "time": "13:20", "price": 18310, "profit": 10.97, "mkt": "코스닥", "now": 17190}, {"code": "290670", "name": "대보마그네틱", "time": "13:00", "price": 5970, "profit": 31.79, "mkt": "코스닥", "now": 5880}, {"code": "095700", "name": "제넥신", "time": "12:40", "price": 2935, "profit": -0.17, "mkt": "코스닥", "now": 3010}, {"code": "042520", "name": "한스바이오메드", "time": "12:40", "price": 20550, "profit": 12.36, "mkt": "코스닥", "now": 20300}, {"code": "003000", "name": "부광약품", "time": "12:20", "price": 4810, "profit": 15.35, "mkt": "코스피", "now": 4380}, {"code": "033790", "name": "피노", "time": "12:00", "price": 8300, "profit": 7.1, "mkt": "코스닥", "now": 8280}, {"code": "307520", "name": "TIGER 지주회사", "time": "11:40", "price": 22230, "profit": 12.64, "mkt": "코스피", "now": 22645}, {"code": "491820", "name": "HANARO 전력설비투자", "time": "11:40", "price": 42485, "profit": 7.1, "mkt": "코스피", "now": 43385}, {"code": "404540", "name": "TIGER KRX기후변화솔루션", "time": "11:40", "price": 24140, "profit": 16.31, "mkt": "코스피", "now": 24360}, {"code": "0177A0", "name": "WON 두산그룹포커스", "time": "11:00", "price": 8755, "profit": 12.32, "mkt": "코스피", "now": 8835}, {"code": "0209Z0", "name": "ACE 코리아AI전력TOP10", "time": "11:00", "price": 7010, "profit": 8.26, "mkt": "코스피", "now": 7170}, {"code": "418420", "name": "라온텍", "time": "11:00", "price": 4655, "profit": 21.86, "mkt": "코스닥", "now": 4415}, {"code": "0117V0", "name": "TIGER 코리아AI전력기기TOP3플러스", "time": "11:00", "price": 18560, "profit": 7.38, "mkt": "코스피", "now": 18980}, {"code": "079900", "name": "전진건설로봇", "time": "11:00", "price": 38100, "profit": 20.38, "mkt": "코스피", "now": 39200}, {"code": "452430", "name": "사피엔반도체", "time": "11:00", "price": 29300, "profit": 13.57, "mkt": "코스닥", "now": 29550}, {"code": "385510", "name": "KODEX 신재생에너지액티브", "time": "11:00", "price": 39100, "profit": 25.56, "mkt": "코스피", "now": 38895}, {"code": "377990", "name": "TIGER Fn신재생에너지", "time": "11:00", "price": 24580, "profit": 5.72, "mkt": "코스피", "now": 24800}, {"code": "334690", "name": "RISE 팔라듐선물(H)", "time": "11:00", "price": 6170, "profit": 4.75, "mkt": "코스피", "now": 6145}, {"code": "261520", "name": "이지스", "time": "11:00", "price": 5130, "profit": 37.9, "mkt": "코스닥", "now": 4550}, {"code": "011690", "name": "와이투솔루션", "time": "11:00", "price": 3325, "profit": 2.62, "mkt": "코스피", "now": 3370}, {"code": "308080", "name": "바이젠셀", "time": "11:00", "price": 7160, "profit": 24.31, "mkt": "코스닥", "now": 7280}, {"code": "085910", "name": "네오티스", "time": "10:40", "price": 15230, "profit": -9.56, "mkt": "코스닥", "now": 14900}, {"code": "114810", "name": "한솔아이원스", "time": "10:40", "price": 12780, "profit": 2.65, "mkt": "코스닥", "now": 12710}, {"code": "217820", "name": "원익피앤이", "time": "10:40", "price": 1996, "profit": 3.47, "mkt": "코스닥", "now": 2020}, {"code": "092600", "name": "앤씨앤", "time": "10:20", "price": 2120, "profit": 11.11, "mkt": "코스닥", "now": 2140}, {"code": "0117P0", "name": "피스피스스튜디오", "time": "10:20", "price": 5570, "profit": 2.96, "mkt": "코스닥", "now": 5500}, {"code": "293490", "name": "카카오게임즈", "time": "10:00", "price": 10290, "profit": 14.21, "mkt": "코스닥", "now": 9880}, {"code": "330350", "name": "위더스제약", "time": "10:00", "price": 8400, "profit": 32.08, "mkt": "코스닥", "now": 8320}, {"code": "171090", "name": "선익시스템", "time": "09:40", "price": 68700, "profit": 4.09, "mkt": "코스닥", "now": 72700}, {"code": "393890", "name": "더블유씨피", "time": "09:40", "price": 11140, "profit": 19.14, "mkt": "코스닥", "now": 10960}, {"code": "900260", "name": "로스웰", "time": "09:40", "price": 1754, "profit": 5.6, "mkt": "코스닥", "now": 1695}, {"code": "408470", "name": "한패스", "time": "09:40", "price": 5750, "profit": 5.31, "mkt": "코스닥", "now": 5560}, {"code": "014950", "name": "삼익제약", "time": "09:40", "price": 6130, "profit": 6.79, "mkt": "코스닥", "now": 6830}, {"code": "0088N0", "name": "WON K-글로벌수급상위", "time": "09:40", "price": 10645, "profit": 14.09, "mkt": "코스피", "now": 10705}, {"code": "014280", "name": "금강공업", "time": "09:40", "price": 4265, "profit": 8.52, "mkt": "코스피", "now": 4290}, {"code": "269420", "name": "KODEX S&P글로벌인프라(합성)", "time": "09:20", "price": 21940, "profit": 23.15, "mkt": "코스피", "now": 21990}, {"code": "139320", "name": "TIGER 금은선물(H)", "time": "09:20", "price": 18555, "profit": 4.3, "mkt": "코스피", "now": 18490}, {"code": "199430", "name": "케이엔알시스템", "time": "09:20", "price": 18680, "profit": 8.16, "mkt": "코스닥", "now": 17960}, {"code": "378340", "name": "필에너지", "time": "09:20", "price": 12060, "profit": 20.24, "mkt": "코스닥", "now": 11790}, {"code": "252500", "name": "세화피앤씨", "time": "09:20", "price": 2605, "profit": 11.32, "mkt": "코스닥", "now": 2340}, {"code": "179900", "name": "유티아이", "time": "09:20", "price": 2840, "profit": 10.51, "mkt": "코스닥", "now": 2910}, {"code": "054940", "name": "엑사이엔씨", "time": "09:20", "price": 4770, "profit": 8.29, "mkt": "코스닥", "now": 4150}, {"code": "024840", "name": "KBI메탈", "time": "09:20", "price": 6370, "profit": 12.74, "mkt": "코스닥", "now": 6160}], "open": [{"code": "260930", "name": "씨티케이", "mkt": "코스닥", "buy": 2575, "now": 2720, "unreal": 5.63, "date": "2026-08-31", "held": 1, "ind": "화장품", "fgn": 0, "ins": 0}, {"code": "429270", "name": "시지트로닉스", "mkt": "코스닥", "buy": 3520, "now": 3655, "unreal": 3.84, "date": "2026-08-31", "held": 1, "ind": "반도체와반도체장비", "fgn": 1, "ins": 0}, {"code": "261200", "name": "덴티스", "mkt": "코스닥", "buy": 2485, "now": 2560, "unreal": 3.02, "date": "2026-08-31", "held": 1, "ind": "건강관리장비와용품", "fgn": 1, "ins": 0}, {"code": "464580", "name": "닷밀", "mkt": "코스닥", "buy": 1600, "now": 1642, "unreal": 2.63, "date": "2026-08-31", "held": 1, "ind": "방송과엔터테인먼트", "fgn": 0, "ins": 0}, {"code": "045520", "name": "크린앤사이언스", "mkt": "코스닥", "buy": 2335, "now": 2385, "unreal": 2.14, "date": "2026-08-31", "held": 1, "ind": "화학", "fgn": 0, "ins": 0}, {"code": "012320", "name": "경동인베스트", "mkt": "코스피", "buy": 46950, "now": 47800, "unreal": 1.81, "date": "2026-08-31", "held": 1, "ind": "비철금속", "fgn": 0, "ins": 1}, {"code": "250000", "name": "보라티알", "mkt": "코스닥", "buy": 5800, "now": 5900, "unreal": 1.72, "date": "2026-08-31", "held": 1, "ind": "식품과기본식료품소매", "fgn": 0, "ins": 1}, {"code": "027580", "name": "상보", "mkt": "코스닥", "buy": 1620, "now": 1630, "unreal": 0.62, "date": "2026-08-31", "held": 1, "ind": "화학", "fgn": 1, "ins": 0}, {"code": "037070", "name": "파세코", "mkt": "코스닥", "buy": 6050, "now": 6080, "unreal": 0.5, "date": "2026-08-31", "held": 1, "ind": "가정용기기와용품", "fgn": 3, "ins": 7}, {"code": "363250", "name": "진시스템", "mkt": "코스닥", "buy": 4030, "now": 4040, "unreal": 0.25, "date": "2026-08-31", "held": 1, "ind": "건강관리장비와용품", "fgn": 3, "ins": 1}, {"code": "351330", "name": "이삭엔지니어링", "mkt": "코스닥", "buy": 3565, "now": 3555, "unreal": -0.28, "date": "2026-08-31", "held": 1, "ind": "IT서비스", "fgn": 0, "ins": 0}, {"code": "093240", "name": "형지엘리트", "mkt": "코스피", "buy": 393, "now": 390, "unreal": -0.76, "date": "2026-08-31", "held": 1, "ind": "섬유,의류,신발,호화품", "fgn": 0, "ins": 3}, {"code": "457190", "name": "이수스페셜티케미컬", "mkt": "코스피", "buy": 69450, "now": 68900, "unreal": -0.79, "date": "2026-08-31", "held": 1, "ind": "화학", "fgn": 0, "ins": 7}, {"code": "491630", "name": "RISE 미국반도체인버스(합성 H)", "mkt": "코스피", "buy": 5570, "now": 5505, "unreal": -1.17, "date": "2026-08-31", "held": 1, "ind": null, "fgn": 0, "ins": 0}, {"code": "080530", "name": "코디", "mkt": "코스닥", "buy": 2430, "now": 2395, "unreal": -1.44, "date": "2026-08-31", "held": 1, "ind": "화장품", "fgn": 4, "ins": 2}, {"code": "187790", "name": "나노", "mkt": "코스닥", "buy": 3035, "now": 2980, "unreal": -1.81, "date": "2026-08-31", "held": 1, "ind": "화학", "fgn": 0, "ins": 1}, {"code": "398120", "name": "에스지헬스케어", "mkt": "코스닥", "buy": 1816, "now": 1777, "unreal": -2.15, "date": "2026-08-31", "held": 1, "ind": "건강관리장비와용품", "fgn": 3, "ins": 0}, {"code": "481070", "name": "에이유브랜즈", "mkt": "코스닥", "buy": 20250, "now": 19710, "unreal": -2.67, "date": "2026-08-31", "held": 1, "ind": "섬유,의류,신발,호화품", "fgn": 3, "ins": 1}], "stat": {"rounds": 10674, "win": 64.8, "exp": 1.93, "win_avg": 10.83, "loss_avg": -14.44, "stocks": 189, "news": 4642}}</script>
+<script id="meta" type="application/json">{"rounds": 10674, "win": 64.8, "exp": 1.93, "win_avg": 10.83, "loss_avg": -14.44, "stocks": 189, "news": 4642, "buy_news": 22, "buy_loss": 15}</script>
+<script>
+/* 발행 시점 스냅샷. 라이브 연결이 되면 교체된다 */
+let D = JSON.parse(document.getElementById("data").textContent);
+let M = JSON.parse(document.getElementById("meta").textContent);
+let BUYS = D.buys, SELLS = D.sells, OPEN = D.open || [];
+let FLOW_ASOF = (BUYS.find(b => b.fasof) || {}).fasof || null;
+let DATA_DATE = D.date || null;
+
+const el = (t, cls, txt) => {
+  const n = document.createElement(t);
+  if (cls) n.className = cls;
+  if (txt != null) n.textContent = txt;      // 뉴스 제목·종목명은 외부 데이터
+  return n;
+};
+const pct = v => (v > 0 ? "+" : "") + Number(v).toFixed(2) + "%";
+const eok = v => v == null ? "—" : v >= 1e12 ? (v / 1e12).toFixed(1) + "조"
+                                             : Math.round(v / 1e8).toLocaleString() + "억";
+/* 순매수 수량. 연속 일수만 보면 하루 4주짜리도 '8일 연속'이 되므로 규모를 함께 쓴다 */
+const qty = v => {
+  if (v == null) return "";
+  const a = Math.abs(v), sign = v > 0 ? "+" : "-";
+  if (a >= 1e4) return sign + (a / 1e4).toFixed(a >= 1e5 ? 0 : 1) + "만주";
+  return sign + a.toLocaleString() + "주";
+};
+
+const metricRows = () => [
+  ["오늘 매수 신호", BUYS.length + "건", "오늘 새로 뜬 것만"],
+  ["진행중 신호", OPEN.length + "종목", "이전 매수, 매도 대기"],
+  ["근거 있는 매수", M.buy_news + "건", "신호 전 7일 내 기사"],
+  ["적자 기업", M.buy_loss + "건", "ROE 또는 PER 음수"],
+  ["신호 승률", M.win + "%", M.rounds.toLocaleString() + "라운드"],
+  ["라운드당 기대값", pct(M.exp), "이길때 " + pct(M.win_avg) + " / 질때 " + pct(M.loss_avg), true],
+];
+function renderScore() {
+  const score = document.getElementById("score");
+  score.replaceChildren();
+  for (const [k, v, note, flag] of metricRows()) {
+    const d = el("div", "metric" + (flag ? " flag" : ""));
+    d.append(el("dt", null, k));
+    const dd = el("dd", "mono", v);
+    dd.append(el("span", "note", note));
+    d.append(dd);
+    score.append(d);
+  }
+}
+
+const AXES = [["profit", "수익성"], ["value", "밸류"], ["timing", "타이밍"], ["size", "규모"]];
+
+function buyCard(c, rank) {
+  const pre = c.news.filter(n => n.pre), post = c.news.filter(n => !n.pre);
+  const wrap = el("article", "card");
+
+  const head = el("div", "card-head");
+  head.append(el("span", "rank mono", "#" + rank));
+  head.append(el("span", "nm", c.name));
+  head.append(el("span", "cd mono", c.code));
+  if (c.mkt) head.append(el("span", "mkt " + (c.mkt === "코스피" ? "kp" : "kq"), c.mkt));
+  head.append(el("span", "tm mono", c.time));
+  wrap.append(head);
+
+  const tags = el("div", "tags");
+  for (const [t, kind] of badges(c)) tags.append(el("span", "tag " + kind, t));
+  wrap.append(tags);
+
+  const body = el("div", "body");
+  const L = el("div", "pane-l");
+
+  const sr = el("div", "score-row");
+  sr.append(el("span", "score-n mono", c.score));
+  sr.append(el("span", "score-l", "진입 점수"));
+  L.append(sr);
+
+  const now = el("div", "nowbox");
+  const line = el("div", "priceline");
+  line.append(el("span", "now mono", c.now ? c.now.toLocaleString() + "원" : "—"));
+  line.append(el("span", "plabel", "현재가"));
+  now.append(line);
+  const sig = el("div", "sigline");
+  sig.append(el("span", "plabel", "신호가"));
+  sig.append(el("span", "sig mono", c.price ? c.price.toLocaleString() + "원" : "—"));
+  if (c.gap != null) {
+    const g = Number(c.gap);
+    sig.append(el("span", "gap mono " + (g > 0 ? "up" : g < 0 ? "down" : ""), pct(g)));
+  }
+  now.append(sig);
+  L.append(now);
+
+  const ax = el("div", "axes");
+  for (const [k, label] of AXES) {
+    const v = c.sc[k];
+    const row = el("div", "axis" + (v == null ? " na" : ""));
+    row.append(el("span", null, label));
+    const t = el("div", "track");
+    const f = el("div", "fill");
+    f.style.width = ((v == null ? 12 : v) / 25 * 100) + "%";
+    t.append(f); row.append(t);
+    row.append(el("span", "v mono", v == null ? "—" : v));
+    ax.append(row);
+  }
+  L.append(ax);
+
+  const dl = el("dl", "facts");
+  const facts = [
+    ["시총", eok(c.cap), false],
+    ["PBR", c.pbr == null ? "—" : Number(c.pbr).toFixed(1), false],
+    ["ROE", c.roe == null ? "—" : Number(c.roe).toFixed(1) + "%", c.roe < 0],
+    ["52주 위치", c.p52 == null ? "—" : c.p52 + "%", false],
+    ["외국인 보유", c.frate == null ? "—" : Number(c.frate).toFixed(1) + "%", false],
+  ];
+  for (const [k, v, neg] of facts) {
+    dl.append(el("dt", null, k));
+    dl.append(el("dd", "mono" + (neg ? " neg" : ""), v));
+  }
+  L.append(dl);
+  if (c.ind) L.append(el("div", "ind", c.ind));
+  body.append(L);
+
+  const R = el("div", "pane-r");
+  const nh = el("div", "news-h");
+  if (pre.length) nh.append(el("span", "dot"));
+  nh.append(el("span", null, pre.length ? `신호 전 뉴스 ${pre.length}건` : "신호 전 뉴스 없음"));
+  R.append(nh);
+  const list = el("div", "news-list");
+  if (!c.news.length) list.append(el("p", "empty", "최근 7일 내 관련 기사가 없다. 근거를 알 수 없는 신호."));
+  else {
+    for (const n of pre) list.append(newsItem(n, false));
+    if (post.length) {
+      list.append(el("div", "split", "신호 이후"));
+      for (const n of post) list.append(newsItem(n, true));
+    }
+  }
+  R.append(list);
+  body.append(R);
+  wrap.append(body);
+  return wrap;
+}
+
+function newsItem(n, after) {
+  const d = el("div", "item" + (after ? " post" : ""));
+  const a = el("a", "item-t", n.t);
+  a.href = n.u; a.target = "_blank"; a.rel = "noopener noreferrer";
+  d.append(a);
+  const m = el("div", "item-m");
+  m.append(el("span", "mono", n.at));
+  if (n.s) m.append(el("span", null, n.s));
+  d.append(m);
+  return d;
+}
+
+function sellTable() {
+  const t = el("table");
+  const hr = el("tr");
+  for (const [h, r] of [["종목", 0], ["코드", 0], ["시장", 0], ["시각", 0],
+                        ["매도가", 1], ["현재가", 1], ["실현수익률", 1], ["기사", 1]])
+    hr.append(el("th", r ? "r" : null, h));
+  const thead = el("thead"); thead.append(hr); t.append(thead);
+  const tb = el("tbody");
+  for (const s of SELLS) {
+    const tr = el("tr");
+    tr.append(el("td", null, s.name));
+    tr.append(el("td", "mono", s.code));
+    tr.append(el("td", null, s.mkt || "—"));
+    tr.append(el("td", "mono", s.time));
+    tr.append(el("td", "r mono", s.price ? s.price.toLocaleString() : "—"));
+    tr.append(el("td", "r mono", s.now ? s.now.toLocaleString() : "—"));
+    const v = s.profit == null ? null : Number(s.profit);
+    tr.append(el("td", "r mono " + (v > 0 ? "up" : v < 0 ? "down" : ""), v == null ? "—" : pct(v)));
+    tr.append(el("td", "r mono", s.news || "0"));
+    tb.append(tr);
+  }
+  t.append(tb);
+  return t;
+}
+
+/* 탭은 셋뿐이다. 매수 안에서는 필터로 쪼개지 않고 점수 하나로 세운다 */
+const TABS = [
+  ["buy",  "오늘 매수", () => BUYS.length],
+  ["open", "진행중",    () => OPEN.length],
+  ["sell", "오늘 매도", () => SELLS.length],
+  ["all",  "전체",      () => BUYS.length + SELLS.length],
+];
+const HINT = {
+  open: "이전 날짜에 매수 신호가 났고 아직 매도 신호가 안 난 것. 오늘의 진입 후보가 아니라 경과 관찰 대상이다.",
+  all:  "오늘 발생한 신호 전부. 최근 순.",
+  buy:  "오늘 새로 발생한 매수 신호만. 진입 점수 순이며, 점수는 수익성·밸류·타이밍·규모 4축 균등(각 25점)이고 카드의 태그가 그 근거다.",
+  sell: "매도 신호는 보유 중일 때만 의미가 있다. 신호만 받아두고 판단은 따로.",
+};
+
+const bar = document.getElementById("filters");
+const cnt = document.getElementById("count");
+for (const [key, label, n] of TABS) {
+  const b = el("button", "chip");
+  b.dataset.f = key;
+  b.setAttribute("aria-pressed", String(key === "buy"));
+  b.append(document.createTextNode(label + " "));
+  b.append(el("span", "n mono", String(n())));
+  bar.insertBefore(b, cnt);
+}
+
+/* 점수의 근거를 문장 대신 태그로. 카드를 보면 왜 위에 있는지 읽힌다 */
+function badges(c) {
+  const out = [];
+  if (c.loss) out.push(["적자", "bad"]);
+  else out.push(["흑자", "ok"]);
+  if (c.pbr != null && c.pbr < 1) out.push(["저평가 PBR " + Number(c.pbr).toFixed(1), "ok"]);
+  if (c.roe != null && c.roe >= 15) out.push(["고ROE " + Number(c.roe).toFixed(0) + "%", "ok"]);
+  if (c.gap != null && c.gap > 3) out.push(["진입 늦음 " + pct(c.gap), "bad"]);
+  if (c.fgn >= 3) out.push(["외국인 " + c.fgn + "일 연속 순매수 " + qty(c.fgn5), "flow"]);
+  if (c.ins >= 3) out.push(["기관 " + c.ins + "일 연속 순매수 " + qty(c.ins5), "flow"]);
+  if (c.fgn === 0 && c.ins === 0 && c.fasof) out.push(["외국인·기관 당일 순매도", "bad"]);
+  if (c.miss > 0) out.push(["지표 없음", "na"]);
+  return out;
+}
+
+let filter = "buy";
+function render() {
+  const grid = document.getElementById("grid"), table = document.getElementById("table");
+  const lede = document.getElementById("lede");
+  lede.replaceChildren(el("b", null, HINT[filter]));
+
+  if (filter === "buy") {
+    grid.hidden = false; table.hidden = true;
+    grid.replaceChildren(...BUYS.map((c, i) => buyCard(c, i + 1)));
+    lede.append(document.createTextNode(
+      " 지표가 없는 축(ETF)은 만점이 아니라 중립 12점으로 본다. 이 점수는 매수 추천이 아니라 정렬 기준이다."
+      + (FLOW_ASOF ? ` 수급은 ${FLOW_ASOF} 기준이고 당일치는 20시경 확정된다.` : "")));
+    cnt.textContent = `${BUYS.length}건 · 진입 점수 높은 순`;
+    return;
+  }
+  grid.hidden = true; table.hidden = false;
+  table.replaceChildren(filter === "sell" ? sellTable()
+                      : filter === "open" ? openTable() : allTable());
+  cnt.textContent = filter === "sell" ? `${SELLS.length}건`
+                  : filter === "open" ? `${OPEN.length}종목 보유중`
+                  : `${BUYS.length + SELLS.length}건 · 최근 순`;
+}
+
+/* 보유중: 진입 이후 평가수익률 */
+function openTable() {
+  const t = el("table"), hr = el("tr");
+  for (const [h, r] of [["경과", 1], ["종목", 0], ["코드", 0], ["시장", 0], ["신호일", 0],
+                        ["신호가", 1], ["현재가", 1], ["신호 후", 1], ["수급", 0]])
+    hr.append(el("th", r ? "r" : null, h));
+  const thead = el("thead"); thead.append(hr); t.append(thead);
+  const tb = el("tbody");
+  for (const o of OPEN) {
+    const tr = el("tr");
+    tr.append(el("td", "r mono age", o.held + "일 전"));
+    tr.append(el("td", null, o.name));
+    tr.append(el("td", "mono", o.code));
+    tr.append(el("td", null, o.mkt || "—"));
+    tr.append(el("td", "mono", o.date));
+    tr.append(el("td", "r mono", o.buy ? o.buy.toLocaleString() : "—"));
+    tr.append(el("td", "r mono", o.now ? o.now.toLocaleString() : "—"));
+    const v = o.unreal == null ? null : Number(o.unreal);
+    tr.append(el("td", "r mono " + (v > 0 ? "up" : v < 0 ? "down" : ""), v == null ? "—" : pct(v)));
+    const f = [];
+    if (o.fgn >= 3) f.push("외국인 " + o.fgn + "일");
+    if (o.ins >= 3) f.push("기관 " + o.ins + "일");
+    tr.append(el("td", null, f.join(" · ") || "—"));
+    tb.append(tr);
+  }
+  t.append(tb);
+  return t;
+}
+
+/* 전체 탭: 매수·매도를 시각 순으로 한 줄씩 */
+function allTable() {
+  const rows = [
+    ...BUYS.map(b => ({ f: "B", name: b.name, code: b.code, mkt: b.mkt, time: b.time,
+                        price: b.price, now: b.now, extra: b.score == null ? "—" : b.score + "점" })),
+    ...SELLS.map(s => ({ f: "S", name: s.name, code: s.code, mkt: s.mkt, time: s.time,
+                         price: s.price, now: s.now, extra: s.profit == null ? "—" : pct(s.profit) })),
+  ].sort((a, b) => b.time.localeCompare(a.time));
+
+  const t = el("table"), hr = el("tr");
+  for (const [h, r] of [["구분", 0], ["종목", 0], ["코드", 0], ["시장", 0], ["시각", 0],
+                        ["신호가", 1], ["현재가", 1], ["점수 / 실현", 1]])
+    hr.append(el("th", r ? "r" : null, h));
+  const thead = el("thead"); thead.append(hr); t.append(thead);
+  const tb = el("tbody");
+  for (const r of rows) {
+    const tr = el("tr");
+    const td = el("td");
+    td.append(el("span", "flag " + r.f, r.f === "B" ? "매수" : "매도"));
+    tr.append(td);
+    tr.append(el("td", null, r.name));
+    tr.append(el("td", "mono", r.code));
+    tr.append(el("td", null, r.mkt || "—"));
+    tr.append(el("td", "mono", r.time));
+    tr.append(el("td", "r mono", r.price ? r.price.toLocaleString() : "—"));
+    tr.append(el("td", "r mono", r.now ? r.now.toLocaleString() : "—"));
+    tr.append(el("td", "r mono", r.extra));
+    tb.append(tr);
+  }
+  t.append(tb);
+  return t;
+}
+
+document.getElementById("filters").addEventListener("click", e => {
+  const b = e.target.closest(".chip");
+  if (!b) return;
+  filter = b.dataset.f;
+  for (const c of document.querySelectorAll(".chip"))
+    c.setAttribute("aria-pressed", String(c === b));
+  render();
+});
+
+/* ── 라이브 갱신 ─────────────────────────────────────────────
+   아티팩트 CSP가 외부 fetch 를 막아서 Supabase 를 직접 못 부른다.
+   대신 뷰어의 Supabase 커넥터를 통해 읽는다. 연결이 안 되면(다른 사람이
+   열었거나 커넥터가 없거나) 발행 시점 스냅샷 그대로 보인다.            */
+const PROJECT = "fvwwxhdufcqpcyysfdgg";
+const QUERY = "select data from page_live";
+
+function setStatus(kind, text) {
+  const el0 = document.getElementById("live");
+  el0.className = "live " + kind;
+  el0.textContent = text;
+}
+
+/* execute_sql 은 안내문으로 감싼 텍스트를 준다. 그 안의 JSON 만 꺼낸다 */
+function parseRows(payload) {
+  if (payload && typeof payload === "object") return payload;
+  if (typeof payload !== "string") return null;
+  const m = payload.match(/<untrusted-data-[^>]*>\s*([\s\S]*?)\s*<\/untrusted-data-/);
+  try { return JSON.parse(m ? m[1] : payload); } catch { return null; }
+}
+
+function applyLive(d) {
+  if (!d || !Array.isArray(d.buys)) return false;
+  D = d; BUYS = d.buys; SELLS = d.sells || []; OPEN = d.open || [];
+  FLOW_ASOF = (BUYS.find(b => b.fasof) || {}).fasof || null;
+  DATA_DATE = d.date || null;
+  if (d.stat) M = Object.assign({}, M, d.stat, {
+    buy_news: BUYS.filter(c => c.news.some(n => n.pre)).length,
+    buy_loss: BUYS.filter(c => c.loss).length });
+  for (const [key, , n] of TABS) {
+    const b = document.querySelector(`.chip[data-f="${key}"] .n`);
+    if (b) b.textContent = String(n());
+  }
+  renderScore();
+  render();
+  return true;
+}
+
+const LIVE_MSG = {
+  needs_reauth:        "Supabase 연결이 만료됐다. 커넥터를 다시 연결하면 최신 데이터가 뜬다.",
+  server_not_connected:"Supabase 커넥터가 없다. 연결하면 매일 자동으로 갱신된다.",
+  selection_required:  "Supabase 커넥터가 여러 개다. 하나를 고르면 갱신된다.",
+  not_granted:         "데이터 접근이 허용되지 않았다.",
+  blocked_by_policy:   "정책상 이 연결이 차단됐다.",
+  approval_required:   "승인이 필요한 연결이다.",
+};
+
+/* 데이터 소스는 두 곳. 아티팩트에서는 뷰어의 Supabase 커넥터를 통하고(CSP가
+   외부 fetch를 막는다), Vercel 에서는 서버리스 프록시를 부른다. 둘 다 없으면
+   발행 시점 스냅샷 그대로 — 기능만 빠지고 화면은 산다. */
+async function connectVercel() {
+  const k = new URLSearchParams(location.search).get("k");
+  const r = await fetch("/api/data" + (k ? "?k=" + encodeURIComponent(k) : ""));
+  if (r.status === 401) { setStatus("warn", "접근 토큰이 필요하다. 주소 끝에 ?k=… 를 붙일 것."); return true; }
+  if (!r.ok) { setStatus("warn", "데이터를 못 가져왔다. 스냅샷을 보는 중."); return true; }
+  if (!applyLive(await r.json())) { setStatus("warn", "데이터 형식을 읽지 못했다."); return true; }
+  setStatus("ok", (DATA_DATE || "") + " 기준 · 방금 갱신");
+  return true;
+}
+
+function connectArtifact(mcp) {
+  let retried = false;
+  mcp.watchTool("Supabase", "execute_sql",
+    { project_id: PROJECT, query: QUERY },
+    (ev) => {
+      if (ev.type === "data") {
+        const rows = parseRows(ev.result?.payload);
+        const d = Array.isArray(rows) ? rows[0]?.data : rows?.data;
+        if (!applyLive(d)) return setStatus("warn", "데이터 형식을 읽지 못했다. 스냅샷을 보는 중.");
+        const at = ev.result?.cache?.storedAt;
+        setStatus("ok", (DATA_DATE || "") + " 기준 · " +
+          (at ? new Date(at).toLocaleTimeString("ko-KR", {hour:"2-digit",minute:"2-digit"}) + " 캐시"
+              : "방금 갱신"));
+        return;
+      }
+      const c = ev.error?.code;
+      if (LIVE_MSG[c]) return setStatus("warn", LIVE_MSG[c]);   // 인증/연결 — 재시도 무의미
+      if (ev.error?.retryable && !retried) {                    // 일시 오류만 1회
+        retried = true;
+        setStatus("wait", "연결이 불안정하다. 다시 시도 중…");
+        setTimeout(() => mcp.invalidate("Supabase", "execute_sql").catch(() => {}),
+                   1200 + Math.random() * 800);
+        return;
+      }
+      setStatus("warn", "최신 데이터를 못 가져왔다. 발행 시점 스냅샷을 보는 중.");
+    },
+    { refetchInterval: 300000 });
+}
+
+(async () => {
+  setStatus("wait", "최신 데이터 확인 중…");
+  const mcp = window.claude ? await claude.use("mcp") : null;
+  if (mcp) return connectArtifact(mcp);
+  try {
+    if (await connectVercel()) return;
+  } catch { /* /api 가 없는 환경 — 스냅샷 유지 */ }
+  setStatus("", "");
+})();
+
+document.getElementById("foot").textContent =
+  `신호 ${M.rounds.toLocaleString()}라운드 · 기사 ${M.news.toLocaleString()}건 · ${M.stocks}종목. ` +
+  `데이터 출처는 thinkpool.com 매매신호, Google News RSS, 토스증권. 개인 모니터링 목적으로만 수집했고 재배포하지 않는다. ` +
+  `과거 성적은 수수료·세금·슬리피지를 반영하지 않았고, 추적 종목은 신호에 등장한 것에 한정되어 전체 시장을 대표하지 않는다. ` +
+  `진입 점수의 각 축이 실제 수익률과 상관있는지는 아직 검증하지 않았다. 투자 판단의 근거로 쓸 수 없다.`;
+
+renderScore();
+render();
+</script>
+
+</body>
+</html>
