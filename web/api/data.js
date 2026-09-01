@@ -2,6 +2,9 @@
 // service_role 키는 여기(서버)에만 있고 브라우저로 내려가지 않는다.
 // Supabase 뷰는 security_invoker 라 RLS가 걸려 있어 공개 키로는 못 읽는다.
 export default async function handler(req, res) {
+  // ACCESS_TOKEN 을 설정하면 ?k= 로 게이트를 건다. 없으면 열어둔다.
+  // 토큰을 URL 에 두면 외부 링크 클릭 시 Referer 로 새므로,
+  // 그걸 막는 Referrer-Policy: no-referrer 를 vercel.json 에 함께 건다.
   const secret = process.env.ACCESS_TOKEN;
   if (secret && req.query.k !== secret) {
     return res.status(401).json({ error: "unauthorized" });

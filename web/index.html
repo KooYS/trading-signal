@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
 <style>:root{color-scheme:light dark}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -551,7 +552,7 @@ const LIVE_MSG = {
 async function connectVercel() {
   const k = new URLSearchParams(location.search).get("k");
   const r = await fetch("/api/data" + (k ? "?k=" + encodeURIComponent(k) : ""));
-  if (r.status === 401) { setStatus("warn", "접근 토큰이 필요하다. 주소 끝에 ?k=… 를 붙일 것."); return true; }
+  if (r.status === 401) { setStatus("warn", "접근이 거부됐다. 토큰이 설정된 배포다."); return true; }
   if (!r.ok) { setStatus("warn", "데이터를 못 가져왔다. 스냅샷을 보는 중."); return true; }
   if (!applyLive(await r.json())) { setStatus("warn", "데이터 형식을 읽지 못했다."); return true; }
   setStatus("ok", (DATA_DATE || "") + " 기준 · 방금 갱신");

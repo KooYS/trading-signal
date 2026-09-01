@@ -69,10 +69,15 @@ aws lambda invoke --function-name trading-signal-collect \
 ## 화면
 
 - 아티팩트(개인용): 뷰어의 Supabase 커넥터로 읽어 매일 자동 갱신
-- Vercel: https://trading-signal-wine.vercel.app/?k=<ACCESS_TOKEN>
+- Vercel: https://trading-signal-wine.vercel.app/
 
 `web/` 이 Vercel 프로젝트다. `web/api/data.js` 가 service_role 키를 서버에만 두고
-`page_live` 뷰를 프록시한다. 토큰(`ACCESS_TOKEN`)이 없으면 401.
+`page_live` 뷰를 프록시한다. 브라우저는 키를 못 본다.
+
+토큰 게이트는 껐다. 토큰을 URL 에 두면 페이지의 뉴스 링크를 클릭할 때
+`Referer` 로 그 주소가 언론사 서버에 넘어가 의미가 없다. 대신
+`Referrer-Policy: no-referrer` 로 주소 자체가 안 새게 했다.
+다시 켜려면 `vercel env add ACCESS_TOKEN` 후 `?k=` 로 접속하면 된다.
 
 **Supabase 뷰는 전부 `security_invoker = on`.** 끄면 뷰가 소유자 권한으로 돌아
 하위 테이블의 RLS를 우회하고, publishable(공개) 키로 데이터가 통째로 읽힌다.
