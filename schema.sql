@@ -64,3 +64,27 @@ create index if not exists news_code_time_idx on news (stock_code, published_at 
 create index if not exists news_time_idx      on news (published_at desc);
 
 alter table news enable row level security;
+
+-- 종목 펀더멘탈 스냅샷 (토스증권). 스펙: docs/toss-invest-api.md
+-- PER·PBR은 주가에 연동돼 매일 바뀌므로 날짜별로 쌓는다. 하루 1행.
+create table if not exists fundamental (
+  stock_code    text not null,
+  as_of         date not null,
+  per numeric(10,2), pbr numeric(10,2), psr numeric(10,2),
+  roe numeric(10,2), eps numeric(14,2), bps numeric(14,2),
+  div_yield     numeric(8,4),           -- 비율 그대로 (0.0169 = 1.69%)
+  market_cap    bigint,
+  close_price   integer, high_52w integer, low_52w integer,
+  industry      text, ceo text, listed_on date, shares_out bigint,
+  sales_mix     jsonb,                  -- [{business, ratio}]
+  collected_at  timestamptz not null default now(),
+  primary key (stock_code, as_of)
+);
+create index if not exists fundamental_code_idx on fundamental (stock_code, as_of desc);
+alter table fundamental enable row level security;
+
+create or replace view fundamental_latest as
+select distinct on (stock_code) *,
+       case when high_52w > low_52w
+            then round(100.0 * (close_price - low_52w) / (high_52w - low_52w), 1) end as pos_52w
+from fundamental order by stock_code, as_of desc;

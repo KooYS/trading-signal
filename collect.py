@@ -5,6 +5,7 @@
   backfill [code…]           TR_SIGNAL07 매매이력 전량. 코드 생략 시 오늘 목록.
   news [code…]               오늘 신호 종목의 최근 뉴스 (Google News RSS).
   news_backfill YYYY-MM…     해당 월의 신호 종목 뉴스를 월 단위로 소급 수집.
+  fund [code…]               오늘 신호 종목의 펀더멘탈 (토스증권). 하루 1행 스냅샷.
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
 import hashlib, json, os, ssl, sys, time, urllib.error, urllib.parse
@@ -20,6 +21,7 @@ except ImportError:
 
 API = "https://api.thinkpool.com"
 GNEWS = "https://news.google.com/rss/search"
+TOSS = "https://wts-info-api.tossinvest.com/api"
 RASSI = "https://rassiapp.thinkpool.com:47700/rassi_ext"
 H = {"Origin": "https://www.thinkpool.com", "User-Agent": "Mozilla/5.0",
      "Content-Type": "application/json", "Accept": "application/json"}
@@ -52,18 +54,26 @@ def tr(code, **body):
     return r["retData"]
 
 
+def _sb_headers(**extra):
+    key = os.environ["SUPABASE_KEY"]
+    h = {"Content-Type": "application/json", "apikey": key, **extra}
+    if key.startswith("eyJ"):
+        # 레거시 service_role은 JWT라 Bearer로도 보낸다. 신형 sb_secret_ 키는
+        # Bearer에 실으면 JWT 파싱을 시도하다 Invalid JWT로 거절당한다.
+        h["Authorization"] = f"Bearer {key}"
+    return h
+
+
+def sb_get(path):
+    return req(f'{os.environ["SUPABASE_URL"].rstrip("/")}/rest/v1/{path}', headers=_sb_headers())
+
+
 def upsert(rows, table="signal", on_conflict="stock_code,trade_date,trade_flag"):
     """PostgREST merge-duplicates는 payload에 있는 컬럼만 갱신한다.
     그래서 backfill이 trade_time 키를 빼면 폴링이 넣어둔 시각이 보존된다."""
     if not rows:
         return 0
-    key = os.environ["SUPABASE_KEY"]
-    h = {"Content-Type": "application/json", "apikey": key,
-         "Prefer": "resolution=merge-duplicates,return=minimal"}
-    if key.startswith("eyJ"):
-        # 레거시 service_role은 JWT라 Bearer로도 보낸다. 신형 sb_secret_ 키는
-        # Bearer에 실으면 JWT 파싱을 시도하다 Invalid JWT로 거절당한다.
-        h["Authorization"] = f"Bearer {key}"
+    h = _sb_headers(Prefer="resolution=merge-duplicates,return=minimal")
     total = 0
     for i in range(0, len(rows), 500):
         req(f'{os.environ["SUPABASE_URL"].rstrip("/")}/rest/v1/{table}'
@@ -108,10 +118,29 @@ def today_codes():
 def poll():
     items = today_codes()
     if not items:
-        return 0
+        return {"signals": 0, "fundamentals": 0}
     codes = sorted({x["stockCode"] for _, x in items})
-    live = {d["stockCode"]: d for d in tr("TR_SIGNAL21", list_Stock=codes)}
-    return upsert([live_row(f, x, live) for f, x in items])
+    # TR_SIGNAL21은 배열 100개가 상한이다. 넘기면 retCode 0206으로 통째로 실패한다
+    live = {}
+    for i in range(0, len(codes), 100):
+        live.update({d["stockCode"]: d
+                     for d in tr("TR_SIGNAL21", list_Stock=codes[i:i + 100])})
+    n = upsert([live_row(f, x, live) for f, x in items])
+    # 펀더멘탈은 하루 1행이면 충분하다. 아직 없는 종목만 채우면
+    # 그날 첫 폴링이 전부 긁고 이후엔 신규 편입분만 몇 건 붙는다.
+    try:
+        m = fund(missing_fund(codes))
+    except Exception as e:
+        m = 0                              # 신호 적재가 우선. 토스 장애로 폴링이 죽으면 안 된다
+        print(f"fund skipped: {e}", file=sys.stderr)
+    return {"signals": n, "fundamentals": m}
+
+
+def missing_fund(codes):
+    day = time.strftime("%Y-%m-%d")
+    have = {r["stock_code"] for r in
+            sb_get(f"fundamental?select=stock_code&as_of=eq.{day}&limit=2000")}
+    return [c for c in codes if c not in have]
 
 
 def backfill(codes):
@@ -182,6 +211,73 @@ def news_backfill(codes_names, months):
     return upsert(rows, "news", "stock_code,guid_hash")
 
 
+def _dig(sections, name, key):
+    for sec in sections:
+        if sec.get("sectionName") == name:
+            return (sec.get("data") or {}).get(key)
+    return None
+
+
+def _num(v):
+    """'12.1배' / '17.7%' / 12.1 → float. 값이 없으면 None."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    t = v.replace("배", "").replace("%", "").replace(",", "").strip()
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def fund_row(code, today):
+    """토스 3개 엔드포인트 → fundamental 한 행. 종목코드는 'A' 접두."""
+    a = "A" + code
+    ind = req(f"{TOSS}/v1/stock-detail/ui/wts/{a}/investment-indicators",
+              headers={"User-Agent": H["User-Agent"]})["result"]["indicatorSections"]
+    ov = req(f"{TOSS}/v2/stock-infos/{a}/overview",
+             headers={"User-Agent": H["User-Agent"]})["result"]
+    pr = req(f"{TOSS}/v3/stock-prices/details?productCodes={a}",
+             headers={"User-Agent": H["User-Agent"]})["result"][0]
+    try:
+        mix = req(f"{TOSS}/v1/companies/{code}/sales-compositions",
+                  headers={"User-Agent": H["User-Agent"]})["result"]["compositions"]
+        mix = [{"business": m.get("business"), "ratio": m.get("ratio")} for m in mix]
+    except Exception:
+        mix = None                       # ETF 등 매출 구성이 없는 종목
+    co = ov.get("company") or {}
+    return {
+        "stock_code": code, "as_of": today,
+        "per": _num(_dig(ind, "가치평가", "displayPer")),
+        "pbr": _num(_dig(ind, "가치평가", "displayPbr")),
+        "psr": _num(_dig(ind, "가치평가", "displayPsr")),
+        "roe": _num(_dig(ind, "수익", "roe")),
+        "eps": _num(_dig(ind, "수익", "eps")),
+        "bps": _num(_dig(ind, "수익", "bps")),
+        "div_yield": _num(_dig(ind, "배당", "dividendYieldRatio")),
+        "market_cap": pr.get("marketCap"), "close_price": pr.get("close"),
+        "high_52w": pr.get("high52w"), "low_52w": pr.get("low52w"),
+        "industry": (co.get("industry") or {}).get("displayName"),
+        "ceo": co.get("ceo"), "listed_on": co.get("listDate"),
+        "shares_out": co.get("sharesOutstanding"), "sales_mix": mix,
+    }
+
+
+def fund(codes):
+    today = time.strftime("%Y-%m-%d")
+    rows, fail = [], []
+    for c in codes:
+        try:
+            rows.append(fund_row(c, today))
+        except Exception as e:
+            fail.append((c, str(e)[:60]))   # 신규상장·ETF는 지표가 없을 수 있다
+        time.sleep(0.2)
+    if fail:
+        print(f"  건너뜀 {len(fail)}종목: {fail[:3]}", file=sys.stderr)
+    return upsert(rows, "fundamental", "stock_code,as_of")
+
+
 def check():
     live = {"457190": {"stockCode": "457190", "tradeDate": "20260831",
                        "tradeTime": "142000", "tradePrice": "69450", "profitRate": "-0.79"}}
@@ -209,10 +305,13 @@ def lambda_handler(event, _context):
     if cmd == "backfill":
         return {"cmd": cmd, "upserted": backfill(
             sorted({x["stockCode"] for _, x in today_codes()}))}
+    if cmd == "fund":
+        return {"cmd": cmd, "upserted": fund(
+            sorted({x["stockCode"] for _, x in today_codes()}))}
     if cmd == "news":
         return {"cmd": cmd, "upserted": news(
             sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()}))}
-    return {"cmd": cmd, "upserted": poll()}
+    return {"cmd": cmd, **poll()}
 
 
 if __name__ == "__main__":
@@ -225,6 +324,9 @@ if __name__ == "__main__":
     elif cmd == "backfill":
         codes = [a for a in args if not a.startswith("--")]
         print("upserted", backfill(codes or sorted({x["stockCode"] for _, x in today_codes()})))
+    elif cmd == "fund":
+        codes = sorted({x["stockCode"] for _, x in today_codes()})
+        print("upserted", fund([c for c in codes if not args or c in args]))
     elif cmd == "news":
         pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
         print("upserted", news([p for p in pairs if not args or p[0] in args]))
