@@ -7,6 +7,7 @@
 - [`docs/thinkpool-signal-api.md`](docs/thinkpool-signal-api.md) — 엔드포인트·인증 모델·응답 스키마 역설계 스펙 (라이브 검증 완료)
 - [`docs/google-news-rss.md`](docs/google-news-rss.md) — Google News RSS 스펙. 키 없이 정적 수집, 날짜 창으로 무제한 소급
 - [`docs/toss-invest-api.md`](docs/toss-invest-api.md) — 토스증권 wts-info-api 스펙. PER/PBR/ROE·시총·52주·매출구성, 인증 불필요
+- [`docs/backtest.md`](docs/backtest.md) — **보조지표 검증 결과.** 무엇이 통했고 무엇이 안 통했나
 
 ## 핵심
 
@@ -29,14 +30,24 @@ python3 collect.py news       # 오늘 종목 최근 뉴스 (Google News RSS, �
 python3 collect.py news_backfill 2026-08   # 월 단위 뉴스 소급
 python3 collect.py fund       # 펀더멘탈 (토스). poll 이 자동으로 함께 채운다
 python3 collect.py flow       # 외국인·기관 순매매 60일치 (토스)
+python3 collect.py flow_backfill 25     # 수급 소급 (1페이지 ≈ 120거래일)
 python3 collect.py price      # 일별 시세 1페이지(약 15개월)
 python3 collect.py price_backfill 20   # 일별 시세를 20페이지까지 소급
 python3 collect.py fin        # 분기 매출·순이익·영업이익 5년치
+python3 collect.py dart_corp        # DART corp_code 대응표 (disclosure 전 1회)
+python3 collect.py disclosure --all # DART 공시 (신호 전 종목, 2019~)
 ```
+
+DART 는 `DART_KEY` 환경변수가 필요하다(opendart.fss.or.kr 무료 발급, 일 2만건).
+키를 저장소에 커밋하지 않는다.
 
 `price` 는 한 번에 다 안 온다. `count` 상한이 300~499 사이고 응답의
 `nextDateTime` 을 `?from=` 으로 되돌려줘야 그 이전 구간이 온다. 1페이지가
 약 300거래일(15개월)이라 `price_backfill 20` 이면 20년 남짓이다.
+
+지표(`tech_daily`·`mkt_index`)는 **매일 08:30 KST 에 DB 안에서 스스로 갱신한다**
+(`pg_cron` + `http` 확장으로 토스를 직접 호출). Lambda 가 죽어도 화면 점수는 유지된다.
+반대로 `price` 를 손으로 채웠으면 `refresh materialized view` 를 꼭 같이 해야 한다.
 
 Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).
 테이블 `signal` — 스키마·설계 근거는 [`schema.sql`](schema.sql).
@@ -93,6 +104,12 @@ Secrets 에 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` 가 필요하다
 
 `web/` 이 Vercel 프로젝트다. `web/api/data.js` 가 service_role 키를 서버에만 두고
 `page_live` 뷰를 프록시한다. 브라우저는 키를 못 본다.
+
+매수 카드는 **과열도 낮은 순**이다. 4축 진입 점수(수익성·밸류·타이밍·규모)는
+6,369 라운드에서 무효로 확인돼 걷어냈다 — 국면 따라 부호가 뒤집힌다. 대신 728일
+일내 랭킹 검정에서 살아남은 것만 점수로 쓴다: **IR 공시 가점**(+3.11%p, 8년 연속
+양수)과 **과열도 감점**(20일 밴드위치·20일선 이격·매물대 대비). 수급·펀더멘탈·
+공급계약·뉴스·거래량은 회색 정보 배지로만 남긴다. 근거는 [`docs/backtest.md`](docs/backtest.md).
 
 탭은 신호의 일생 순서다 — **오늘 매수 → 진행중 → 오늘 매도 → 청산**. 오늘 매수·매도는
 `trade_date = current_date` 라 하루만 살고, 진행중은 "마지막 신호가 B인 종목"의 현재

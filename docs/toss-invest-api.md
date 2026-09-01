@@ -92,7 +92,7 @@ GET /v1/companies/{code}/sales-compositions        ← 여기는 "A" 접두 없�
 ### 2-5. 투자자별 매매동향 (개인·외국인·기관) ★
 
 ```
-GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
+GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=120
 ```
 ```jsonc
 // result.body[] — 최근일부터 내림차순
@@ -125,6 +125,20 @@ GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
 > `뷰웍스 기관 12일 연속 +579주`(노이즈) vs `지니언스 기관 3일 연속 +11만주`(실매수).
 > 일수와 수량을 함께 볼 것.
 
+**`size` 상한은 121~299 사이다**(120 OK, 300부터 400 — 실측). 120이면 약 5.7개월치.
+
+**페이지네이션이 있다.** 응답 `result` 가 `{pagingParam, body, lastPage}` 이고,
+`pagingParam` 을 **평평하게** 쿼리에 되돌려주면 그 이전 구간이 온다.
+
+```
+1페이지: ?productCode=A005930&size=120        → 2026-03-10 까지, lastPage=false
+          pagingParam = {"number":2,"size":120,"key":"2026-03-09"}
+2페이지: ?productCode=A005930&number=2&size=120&key=2026-03-09  → 2025-09-05 까지
+```
+
+⚠️ JSON 통째로 넣거나(`pagingParam={...}`) 점 표기(`pagingParam.key=`)는 무시당한다.
+`page`·`pageNumber` 도 안 먹는다. 키를 평평하게 펴는 것만 된다. `lastPage` 로 끝을 판단한다.
+
 ## 3. 그 밖에 관측된 것 (미분석)
 
 `/analytics` 탭에서 호출되는 것들. 전부 `wts-info-api`라 익명으로 열릴 가능성이 높다.
@@ -149,9 +163,13 @@ GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
 
 **분기 재무 4개 전부 익명으로 열린다.** POST 본문을 빈 `{}` 로 보내도 200이 온다.
 
-- `revenue-and-net-profit`, `operating-income` — 기본 **3년치**(2023-09 ~ 2026-06, 12분기).
-  응답에 `selectedRange: {code:3, "3년"}` 과 `selectableRanges: [1년, 3년, 5년]` 이 있다.
-  **본문에 코드를 실으면 5년까지 늘어난다**(요청 형식은 2단계에서 확정).
+- `revenue-and-net-profit`, `operating-income` — 본문 **`{"range": 5}`** 라야 5년이다.
+  빈 본문이면 3년만 온다. `rangeCode`·`code`·`period`·`selectedRange` 등 다른 이름은
+  전부 무시되고 3년이 온다(2단계 실측).
+  **⚠️ `table[]` 은 range 와 무관하게 12개로 잘린다.** 5년치는 `graph[]` 에 있다.
+  대신 `table` 에만 `netProfitGrowthRatio` 가 있어서 둘을 period 로 합쳐야 전량이 나온다.
+  (`table` 만 읽었다가 97종목 전부 12분기 이하로 들어와서 발견)
+  ETF·리츠는 재무제표가 없어 404다 — 오늘 신호 119종목 중 22개가 ETF라 건너뛴다.
 - `financial-statements/comprehensive` — `selectedFactor: LIABILITY_RATIO`,
   `selectableFactors` 에 부채비율·유동비율 등. 지표를 골라 받는 구조다.
 - `financial-statement-records` — `selectedFactor: BAL(재무상태표)`,

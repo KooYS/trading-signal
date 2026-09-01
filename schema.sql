@@ -152,14 +152,107 @@ create table if not exists financials (
   period            text not null,     -- 분기말 'YYYY-MM'
   revenue           bigint,            -- 매출(원)
   net_profit        bigint,            -- 순이익(원)
-  net_profit_ratio  numeric(12,4),     -- 순이익률(%)
-  net_profit_growth numeric(14,4),     -- 순이익 증감률(%)
+  -- 증감률은 전분기가 0 근처면 임의로 커진다. 자릿수를 묶어두면 overflow 로 400 이 난다
+  net_profit_ratio  numeric,           -- 순이익률(%)
+  net_profit_growth numeric,           -- 순이익 증감률(%)
   operating_income  bigint,            -- 영업이익(원)
   collected_at      timestamptz not null default now(),
   primary key (stock_code, period)
 );
 create index if not exists financials_code_idx on financials (stock_code, period desc);
 alter table financials enable row level security;
+
+-- 신호에 한 번이라도 등장한 종목. 오늘 목록(today_codes)과 달리 과거 검증용이다.
+create or replace view signal_stock as
+select stock_code, max(stock_name) as stock_name,
+       min(trade_date) as first_date, max(trade_date) as last_date, count(*) as signals
+from signal group by stock_code;
+
+-- DART corp_code ↔ 종목코드. DART 는 6자리 종목코드로 조회가 안 되고
+-- 자기 8자리 corp_code 만 받는다. 대응표가 corpCode.xml 인데 ZIP 으로 온다.
+create table if not exists dart_corp (
+  corp_code    text primary key,
+  stock_code   text,
+  corp_name    text,
+  collected_at timestamptz not null default now()
+);
+create index if not exists dart_corp_stock_idx on dart_corp (stock_code);
+alter table dart_corp enable row level security;
+
+-- 공시. 구글뉴스로는 호재·악재가 같은 +1 로 세어져서 '공시 소재' 가설을
+-- 잴 수 없었다. 공시는 유형이 제목에 박혀 있어 부호를 가를 수 있다.
+-- ⚠️ report_nm 을 날것으로 둔다. 분류는 뷰에서 — 기준을 바꿀 때마다 재수집하지 않으려고.
+create table if not exists disclosure (
+  rcept_no     text primary key,     -- 접수번호. 공시 1건 1행
+  stock_code   text not null,
+  corp_code    text,
+  rcept_dt     date not null,
+  report_nm    text not null,        -- 공시 제목
+  flr_nm       text,                 -- 제출인
+  corp_cls     text,                 -- Y 유가 / K 코스닥 / N 코넥스 / E 기타
+  rm           text,                 -- 비고(정정·첨부 등)
+  collected_at timestamptz not null default now()
+);
+create index if not exists disclosure_code_dt_idx on disclosure (stock_code, rcept_dt desc);
+create index if not exists disclosure_dt_idx      on disclosure (rcept_dt desc);
+alter table disclosure enable row level security;
+
+-- ── 검증용 파생 객체 ────────────────────────────────────────────────
+-- 검증 결과와 방법은 docs/backtest.md 참조.
+-- ⚠️ matview 는 price 를 채운 뒤 반드시 refresh 해야 한다. 안 하면 화면이
+--    조용히 옛 지표로 점수를 매긴다.
+
+-- 기술적 지표. ⚠️ close_price 가 integer 라 ::numeric 을 빼면 정수 나눗셈이 되어
+-- 6900/7275 = 0 → -100% 가 나온다. 실제로 ret5·ret20·vs_hi60 이 그렇게 깨져 있었다.
+create materialized view if not exists tech_daily as
+with p as (
+  select stock_code, trade_date, close_price c, volume v,
+    avg(close_price) over w5 ma5, avg(close_price) over w20 ma20,
+    avg(close_price) over w60 ma60, avg(volume) over w20 vol20,
+    max(close_price) over w20 hi20, min(close_price) over w20 lo20,
+    max(close_price) over w60 hi60,
+    sum(close_price::numeric * volume) over w60 / nullif(sum(volume) over w60, 0) vwap60,
+    lag(close_price, 5)  over (partition by stock_code order by trade_date) c5,
+    lag(close_price, 20) over (partition by stock_code order by trade_date) c20,
+    count(*) over w60 n60
+  from price
+  window w5  as (partition by stock_code order by trade_date rows between 4  preceding and current row),
+         w20 as (partition by stock_code order by trade_date rows between 19 preceding and current row),
+         w60 as (partition by stock_code order by trade_date rows between 59 preceding and current row)
+)
+select stock_code, trade_date, c close_price,
+  round(100.0*(c::numeric/nullif(ma5,0)  - 1), 2) gap_ma5,
+  round(100.0*(c::numeric/nullif(ma20,0) - 1), 2) gap_ma20,
+  round(100.0*(c::numeric/nullif(ma60,0) - 1), 2) gap_ma60,
+  (ma5 > ma20 and ma20 > ma60) aligned,
+  round((v::numeric / nullif(vol20,0)), 2) vol_ratio,
+  round(100.0*(c - lo20)::numeric / nullif(hi20 - lo20,0), 1) pos20,   -- 20일 밴드 내 위치
+  round(100.0*(c::numeric/nullif(hi60,0) - 1), 2) vs_hi60,
+  round(100.0*(c::numeric/nullif(vwap60,0) - 1), 2) vs_vwap60,          -- 매물대 대용
+  round(100.0*(c::numeric/nullif(c5,0)  - 1), 2) ret5,
+  round(100.0*(c::numeric/nullif(c20,0) - 1), 2) ret20
+from p where n60 >= 60;
+create index if not exists tech_idx on tech_daily (stock_code, trade_date desc);
+
+-- 등가중 시장지수. 초과수익(alpha) 계산의 기준선이다.
+-- 액면분할·병합으로 튀는 값을 막으려고 일간수익률 ±35% 밖은 버린다.
+create materialized view if not exists mkt_index as
+with ret as (
+  select stock_code, trade_date,
+    close_price::numeric/nullif(lag(close_price) over (partition by stock_code order by trade_date),0)-1 r
+  from price
+), daily as (select trade_date, avg(r) mkt_r from ret where r between -0.35 and 0.35 group by 1)
+select trade_date, exp(sum(ln(1+mkt_r)) over (order by trade_date))::numeric lvl
+from daily where mkt_r > -1;
+create index if not exists mkt_idx on mkt_index (trade_date);
+
+-- 매일 08:30 KST(23:30 UTC, 일~목) 전일 시세를 채우고 지표를 다시 계산한다.
+-- 09:03 첫 폴링 전에 끝난다. 안 하면 과열도가 조용히 옛 데이터로 매겨진다.
+-- 신규 종목은 하루 0.05건(0.6%)이라 신호 목록 전체를 미리 받아둬도 거의 안 샌다.
+--   create extension pg_cron;
+--   select cron.schedule('daily-tech', '30 23 * * 0-4', $$select daily_tech_refresh()$$);
+-- 수집은 DB 안에서 한다 — http 확장으로 토스를 직접 부른다(Supabase 도 서울이라
+-- 지역 제한에 안 걸린다). Lambda 없이도 지표가 유지되게 하려는 것이다.
 
 -- 화면용 단일 JSON: page_live. 정의는 Supabase 마이그레이션
 -- page_live_add_closed_rounds_and_buy_context 참조.

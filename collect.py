@@ -6,13 +6,16 @@
   news [code…]               오늘 신호 종목의 최근 뉴스 (Google News RSS).
   news_backfill YYYY-MM…     해당 월의 신호 종목 뉴스를 월 단위로 소급 수집.
   fund [code…]               오늘 신호 종목의 펀더멘탈 (토스증권). 하루 1행 스냅샷.
-  flow [code…]               개인·외국인·기관 순매매 60일치 (토스증권).
+  flow [code…]               개인·외국인·기관 순매매 120일치 (토스증권).
+  flow_backfill [N] [code…]  수급을 N페이지까지 소급. 1페이지 ≈ 120거래일.
   price [code…]              일별 시세 1페이지(약 15개월). 토스 c-chart.
   price_backfill [N] [code…] 일별 시세를 N페이지까지 소급. 1페이지 ≈ 300거래일.
   fin [code…]                분기 매출·순이익·영업이익 5년치 (토스증권).
+  dart_corp                  DART corp_code ↔ 종목코드 대응표. disclosure 전에 1회.
+  disclosure [--all|code…]   DART 공시 목록. 기본 2019-01-01 이후.
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
-import hashlib, json, os, re, ssl, sys, time, urllib.error, urllib.parse
+import hashlib, io, json, os, re, ssl, sys, time, urllib.error, urllib.parse, zipfile
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -27,6 +30,7 @@ API = "https://api.thinkpool.com"
 GNEWS = "https://news.google.com/rss/search"
 TOSS = "https://wts-info-api.tossinvest.com/api"
 RASSI = "https://rassiapp.thinkpool.com:47700/rassi_ext"
+DART = "https://opendart.fss.or.kr/api"
 H = {"Origin": "https://www.thinkpool.com", "User-Agent": "Mozilla/5.0",
      "Content-Type": "application/json", "Accept": "application/json"}
 
@@ -42,8 +46,15 @@ def req(url, body=None, headers=H, tries=3, raw=False):
             if raw:                                        # RSS(XML) 등 비-JSON 응답
                 return body_bytes
             return json.loads(body_bytes) if body_bytes else None  # rassi는 content-type이 text/html이라 무조건 JSON 파싱
-        except urllib.error.HTTPError:               # 4xx/5xx는 재시도해도 같다
-            raise
+        except urllib.error.HTTPError as e:          # 4xx/5xx는 재시도해도 같다
+            # PostgREST 는 본문에 message/details/hint 를 적어 보낸다. 그걸 버리면
+            # "HTTP Error 400: Bad Request" 만 남아 원인을 못 찾는다.
+            try:
+                detail = e.read()[:800].decode("utf-8", "replace")
+            except Exception:
+                detail = ""
+            raise urllib.error.HTTPError(
+                e.url, e.code, f"{e.reason} — {detail}", e.headers, None) from None
         except (urllib.error.URLError, TimeoutError):
             # thinkpool이 해외(GitHub 러너) 접속에서 간헐 타임아웃을 낸다
             if i == tries - 1:
@@ -72,11 +83,25 @@ def sb_get(path):
     return req(f'{os.environ["SUPABASE_URL"].rstrip("/")}/rest/v1/{path}', headers=_sb_headers())
 
 
+def _finite(rows):
+    """NaN/Infinity 를 지운다.
+
+    json.loads 는 NaN·Infinity 리터럴을 float 로 받아들이고 json.dumps 는 그걸
+    그대로 내보내는데, 표준 JSON 이 아니라서 PostgREST 가 400 을 낸다.
+    실적 증감률처럼 전분기가 0 근처면 API 가 이런 값을 준다."""
+    for r in rows:
+        for k, v in r.items():
+            if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+                r[k] = None
+    return rows
+
+
 def upsert(rows, table="signal", on_conflict="stock_code,trade_date,trade_flag"):
     """PostgREST merge-duplicates는 payload에 있는 컬럼만 갱신한다.
     그래서 backfill이 trade_time 키를 빼면 폴링이 넣어둔 시각이 보존된다."""
     if not rows:
         return 0
+    rows = _finite(rows)
     h = _sb_headers(Prefer="resolution=merge-duplicates,return=minimal")
     total = 0
     for i in range(0, len(rows), 500):
@@ -110,6 +135,14 @@ def hist_row(code, name, r):
             "trade_date": _d(r["td"]), "trade_flag": r["tf"],
             "trade_price": int(r["tp"]),
             "profit_rate": float(r["pr"]) if r.get("pr") else None}
+
+
+def all_codes():
+    """신호에 한 번이라도 등장한 전 종목. 오늘 목록(today_codes)과 달리
+    과거 검증용이다 — 공시·시세를 과거 라운드에 붙이려면 이쪽이 필요하다."""
+    # PostgREST 는 limit 을 안 주면 1000행에서 자른다. 지금 189종목이지만 늘어난다
+    return sorted(x["stock_code"]
+                  for x in sb_get("signal_stock?select=stock_code&limit=5000"))
 
 
 def today_codes():
@@ -344,14 +377,28 @@ def flow_rows(code, body):
     return out
 
 
-def flow(codes, size=60):
+def flow(codes, size=120, pages=1):
+    """투자자별 매매동향. size 상한은 121~299 사이다(120 OK, 300부터 400 — 실측).
+
+    한 번에 다 안 온다. 응답의 pagingParam 을 **평평하게** 쿼리에 되돌려주면
+    그 이전 구간이 온다. {"number":2,"size":120,"key":"2026-03-09"} 를
+    number=2&size=120&key=2026-03-09 로 붙이는 식이다. JSON 통째로나
+    pagingParam.key 같은 점 표기는 무시당한다. lastPage 로 끝을 판단한다.
+    1페이지 ≈ 120거래일 ≈ 5.7개월."""
     rows, fail = [], []
     for c in codes:
+        q = f"productCode=A{c}&size={size}"
         try:
-            r = req(f"{TOSS}/v1/stock-infos/trade/trend/trading-trend"
-                    f"?productCode=A{c}&size={size}",
-                    headers={"User-Agent": H["User-Agent"]})["result"]["body"]
-            rows += flow_rows(c, r)
+            for _ in range(pages):
+                r = req(f"{TOSS}/v1/stock-infos/trade/trend/trading-trend?{q}",
+                        headers={"User-Agent": H["User-Agent"]})["result"]
+                body = r.get("body") or []
+                rows += flow_rows(c, body)
+                pp = r.get("pagingParam")
+                if not body or r.get("lastPage") or not pp:
+                    break
+                q = f"productCode=A{c}&" + urllib.parse.urlencode(pp)
+                time.sleep(0.2)
         except Exception as e:
             fail.append((c, str(e)[:50]))
         time.sleep(0.2)
@@ -421,23 +468,42 @@ def _operating(x):
     return None
 
 
+def _won(v):
+    """금액 컬럼은 bigint 다. API 가 실수로 주면 캐스팅에서 400 이 난다."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+        return None
+    return int(v)
+
+
+def _series(r):
+    """분기 시계열. graph 와 table 을 period 로 합친다.
+
+    ⚠️ table[] 은 range 와 무관하게 12개로 잘린다. {"range":5} 를 보내도
+    table 은 12분기고 5년치는 graph[] 에 있다(실측: 97종목 전부 12분기 이하).
+    대신 table 에만 netProfitGrowthRatio 가 있어서 둘 다 봐야 한다."""
+    merged = {}
+    for key in ("graph", "table"):
+        for x in (r or {}).get(key) or []:
+            p = x.get("period")
+            if p:
+                merged.setdefault(p, {}).update(x)
+    return merged
+
+
 def fin_rows(code, rev, opi):
-    """분기 실적 → financials 행. 두 엔드포인트 모두 table[] 에
-    {period: 'YYYY-MM', ...} 로 분기별로 온다. period 로 합친다."""
+    """분기 실적 → financials 행. period 로 합친다."""
     out = {}
-    for x in (rev or {}).get("table") or []:
-        p = x.get("period")
-        if p:
-            out[p] = {"stock_code": code, "period": p,
-                      "revenue": x.get("revenue"),
-                      "net_profit": x.get("netProfit"),
-                      "net_profit_ratio": x.get("netProfitRatio"),
-                      "net_profit_growth": x.get("netProfitGrowthRatio")}
-    for x in (opi or {}).get("table") or []:
-        p = x.get("period")
-        if p:
-            out.setdefault(p, {"stock_code": code, "period": p})
-            out[p]["operating_income"] = _operating(x)
+    for p, x in _series(rev).items():
+        out[p] = {"stock_code": code, "period": p,
+                  "revenue": _won(x.get("revenue")),
+                  "net_profit": _won(x.get("netProfit")),
+                  "net_profit_ratio": x.get("netProfitRatio"),
+                  "net_profit_growth": x.get("netProfitGrowthRatio")}
+    for p, x in _series(opi).items():
+        out.setdefault(p, {"stock_code": code, "period": p})
+        out[p]["operating_income"] = _won(_operating(x))
     return list(out.values())
 
 
@@ -461,6 +527,94 @@ def fin(codes, years=5):
     if fail:
         print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
     return upsert(rows, "financials", "stock_code,period")
+
+
+def dart_corp():
+    """stock_code → corp_code 표.
+
+    DART 는 6자리 종목코드로 조회가 안 되고 자기 8자리 corp_code 만 받는다.
+    그 대응표가 corpCode.xml 인데 ZIP 으로 온다. 비상장사는 stock_code 가
+    빈 문자열이라 버린다(전체 10만여 건 중 상장사는 4천 안쪽)."""
+    key = os.environ["DART_KEY"]
+    blob = req(f"{DART}/corpCode.xml?crtfc_key={key}",
+               headers={"User-Agent": H["User-Agent"]}, raw=True)
+    with zipfile.ZipFile(io.BytesIO(blob)) as z:
+        xml = z.read(z.namelist()[0])
+    rows = []
+    for el in ET.fromstring(xml).iter("list"):
+        code = (el.findtext("stock_code") or "").strip()
+        if code:
+            rows.append({"corp_code": (el.findtext("corp_code") or "").strip(),
+                         "stock_code": code,
+                         "corp_name": (el.findtext("corp_name") or "").strip()})
+    return upsert(rows, "dart_corp", "corp_code")
+
+
+def corp_map(codes):
+    """필요한 종목만 골라 받는다.
+
+    대응표를 통째로 읽으면 PostgREST 기본 상한(1000행)에 조용히 잘린다.
+    3,988행 중 앞부분만 와서 189종목 중 173개가 '미등록' 으로 빠졌었다.
+    limit 을 키우는 대신 필요한 것만 집으면 표가 커져도 안 깨진다."""
+    out = {}
+    for i in range(0, len(codes), 100):          # URL 길이 때문에 100개씩
+        chunk = ",".join(codes[i:i + 100])
+        for r in sb_get(f"dart_corp?select=stock_code,corp_code"
+                        f"&stock_code=in.({chunk})&limit=200"):
+            out[r["stock_code"]] = r["corp_code"]
+    return out
+
+
+def disclosure_row(code, corp_code, x):
+    """DART list.json 항목 → disclosure 행.
+
+    report_nm 을 날것 그대로 둔다. 호재·악재 분류는 뷰에서 한다 —
+    분류 기준을 바꿀 때마다 다시 긁고 싶지 않다."""
+    return {"rcept_no": x["rcept_no"], "stock_code": code, "corp_code": corp_code,
+            "rcept_dt": _d(x["rcept_dt"]), "report_nm": x.get("report_nm"),
+            "flr_nm": x.get("flr_nm"), "corp_cls": x.get("corp_cls"),
+            "rm": x.get("rm") or None}
+
+
+def disclosure(codes, since="20190101", until=None, pages=20):
+    """공시 목록. 뉴스와 달리 유형이 제목에 박혀 있어 호재·악재를 가를 수 있다.
+
+    상태코드: 000 정상 / 013 데이터 없음 / 020 요청한도 초과(일 2만) /
+    010·011 키 문제 / 100 파라미터 오류 / 800 점검."""
+    key = os.environ["DART_KEY"]
+    until = until or time.strftime("%Y%m%d")
+    corp = corp_map(codes)
+    rows, fail, skip = [], [], []
+    for c in codes:
+        cc = corp.get(c)
+        if not cc:                      # ETF·리츠는 DART 에 없다
+            skip.append(c)
+            continue
+        try:
+            for page in range(1, pages + 1):
+                r = req(f"{DART}/list.json?crtfc_key={key}&corp_code={cc}"
+                        f"&bgn_de={since}&end_de={until}"
+                        f"&page_no={page}&page_count=100",
+                        headers={"User-Agent": H["User-Agent"]})
+                st = r.get("status")
+                if st == "013":                       # 이 기간 공시 없음
+                    break
+                if st == "020":
+                    raise RuntimeError("DART 일일 한도 초과(2만건)")
+                if st != "000":
+                    raise RuntimeError(f'{st} {r.get("message")}')
+                rows += [disclosure_row(c, cc, x) for x in r.get("list") or []]
+                if page >= int(r.get("total_page") or 1):
+                    break
+                time.sleep(0.1)
+        except Exception as e:
+            fail.append((c, str(e)[:60]))
+        time.sleep(0.1)
+    if skip:
+        print(f"  대응표에 없음 {len(skip)}종목(ETF·리츠 등): {skip[:5]}", file=sys.stderr)
+    if fail:
+        print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
+    return upsert(rows, "disclosure", "rcept_no")
 
 
 def check():
@@ -490,18 +644,37 @@ def check():
     assert pr["base_price"] == 260000 and pr["amount"] == 6069687118000, pr
     assert not price_rows("x", [{"close": 1}])          # dt 없는 건 버린다
     # 분기 실적 — 매출·순이익은 실측 필드, 영업이익은 이름을 집어낸다
+    # graph 가 길고(5년) table 이 12개뿐이며 성장률을 보탠다 — 합쳐야 전량이 나온다
     f = fin_rows("005930",
-                 {"table": [{"period": "2023-09", "revenue": 67404652000000,
+                 {"graph": [{"period": "2021-09", "revenue": 1, "netProfit": 2},
+                            {"period": "2023-09", "revenue": 67404652000000,
+                             "netProfit": 5844171000000, "netProfitRatio": 8.67}],
+                  "table": [{"period": "2023-09", "revenue": 67404652000000,
                              "netProfit": 5844171000000, "netProfitRatio": 8.67,
                              "netProfitGrowthRatio": 239.07}]},
-                 {"table": [{"period": "2023-09", "operatingIncome": 2433500000000,
+                 {"graph": [{"period": "2023-09", "operatingIncome": 2433500000000,
                              "operatingIncomeRatio": 3.61}]})
-    assert len(f) == 1 and f[0]["revenue"] == 67404652000000, f
-    assert f[0]["operating_income"] == 2433500000000, f      # 비율을 집으면 안 된다
+    by = {r["period"]: r for r in f}
+    assert len(f) == 2 and by["2021-09"]["revenue"] == 1, f      # graph 만 있는 분기도 살린다
+    assert by["2023-09"]["net_profit_growth"] == 239.07, f       # table 이 성장률을 보탠다
+    assert by["2023-09"]["operating_income"] == 2433500000000, f  # 비율을 집으면 안 된다
     g = fin_rows("x", {"table": [{"period": "2024-03", "revenue": 1}]},
                  {"table": [{"period": "2024-03", "operatingIncomeKrw": 9,
                              "someOperatingValue": 7}]})     # 이름 미상 → 환산액은 제외
     assert g[0]["operating_income"] == 7, g
+    # 금액은 bigint 다. 실수로 와도 정수로 눕히고, 못 쓸 값은 버린다
+    assert _won(5844171000000.0) == 5844171000000 and _won(None) is None
+    assert _won(float("nan")) is None and _won(True) is None and _won("1") is None
+    nan, inf = float("nan"), float("inf")
+    fx = _finite([{"a": nan, "b": inf, "c": -inf, "d": 1.5, "e": None, "f": "x"}])[0]
+    assert fx == {"a": None, "b": None, "c": None, "d": 1.5, "e": None, "f": "x"}, fx
+    d = disclosure_row("005930", "00126380",
+                       {"corp_code": "00126380", "corp_name": "삼성전자",
+                        "stock_code": "005930", "corp_cls": "Y",
+                        "report_nm": "단일판매ㆍ공급계약체결", "rcept_no": "20260901000123",
+                        "flr_nm": "삼성전자", "rcept_dt": "20260901", "rm": ""})
+    assert d["rcept_dt"] == "2026-09-01" and d["rcept_no"] == "20260901000123", d
+    assert d["report_nm"] == "단일판매ㆍ공급계약체결" and d["rm"] is None, d   # 빈 비고는 null
     print("check ok")
 
 
@@ -528,13 +701,22 @@ def lambda_handler(event, _context):
     # thinkpool이 해외 IP를 막아서 서울(ap-northeast-2)에서 돈다. §7 참고
     ev = event or {}
     cmd = ev.get("cmd", "poll")
-    if cmd in ("backfill", "flow", "fund", "price", "price_backfill", "fin"):
+    if cmd in ("backfill", "flow", "flow_backfill", "fund",
+               "price", "price_backfill", "fin"):
         codes = event_codes(ev)
+        if cmd == "flow_backfill":
+            return {"cmd": cmd, "codes": len(codes),
+                    "upserted": flow(codes, pages=int(ev.get("pages", 25)))}
         fn = {"backfill": backfill, "flow": flow, "fund": fund, "fin": fin}.get(cmd)
         if fn:
             return {"cmd": cmd, "codes": len(codes), "upserted": fn(codes)}
         pages = int(ev.get("pages", 20)) if cmd == "price_backfill" else 1
         return {"cmd": cmd, "codes": len(codes), "upserted": price(codes, pages=pages)}
+    if cmd == "dart_corp":
+        return {"cmd": cmd, "upserted": dart_corp()}
+    if cmd == "disclosure":
+        codes = ev.get("codes") or all_codes()
+        return {"cmd": cmd, "codes": len(codes), "upserted": disclosure(codes)}
     if cmd == "news":
         want = set(event_codes(ev))
         return {"cmd": cmd, "upserted": news(
@@ -562,6 +744,18 @@ if __name__ == "__main__":
     elif cmd == "news":
         pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
         print("upserted", news([p for p in pairs if not args or p[0] in args]))
+    elif cmd == "dart_corp":
+        print("upserted", dart_corp())
+    elif cmd == "disclosure":
+        rest = [a for a in args if not a.startswith("--")]
+        codes = rest or (all_codes() if "--all" in args or not rest
+                         else sorted({x["stockCode"] for _, x in today_codes()}))
+        print("upserted", disclosure(codes))
+    elif cmd == "flow_backfill":
+        pages = int(args[0]) if args and args[0].isdigit() else 25
+        rest = [a for a in args[1:] if not a.startswith("--")]
+        codes = sorted({x["stockCode"] for _, x in today_codes()})
+        print("upserted", flow(rest or codes, pages=pages))
     elif cmd == "price":
         codes = sorted({x["stockCode"] for _, x in today_codes()})
         print("upserted", price([c for c in codes if not args or c in args]))
