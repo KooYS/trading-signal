@@ -5,7 +5,7 @@
   backfill [--full] [code…]  TR_SIGNAL07 매매이력. 코드 생략 시 오늘 목록.
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
-import json, os, ssl, sys, urllib.request
+import json, os, ssl, sys, time, urllib.error, urllib.request
 
 try:                                    # ponytail: macOS 시스템 파이썬은 루트 CA가 없다
     import certifi
@@ -19,13 +19,22 @@ H = {"Origin": "https://www.thinkpool.com", "User-Agent": "Mozilla/5.0",
      "Content-Type": "application/json", "Accept": "application/json"}
 
 
-def req(url, body=None, headers=H):
+def req(url, body=None, headers=H, tries=3):
     data = json.dumps(body).encode() if body is not None else None
-    with urllib.request.urlopen(
-            urllib.request.Request(url, data=data, headers=headers),
-            timeout=30, context=CTX) as f:
-        raw = f.read()
-    return json.loads(raw) if raw else None      # rassi는 content-type이 text/html이라 무조건 JSON 파싱
+    for i in range(tries):
+        try:
+            with urllib.request.urlopen(
+                    urllib.request.Request(url, data=data, headers=headers),
+                    timeout=30, context=CTX) as f:
+                raw = f.read()
+            return json.loads(raw) if raw else None  # rassi는 content-type이 text/html이라 무조건 JSON 파싱
+        except urllib.error.HTTPError:               # 4xx/5xx는 재시도해도 같다
+            raise
+        except (urllib.error.URLError, TimeoutError):
+            # thinkpool이 해외(GitHub 러너) 접속에서 간헐 타임아웃을 낸다
+            if i == tries - 1:
+                raise
+            time.sleep(2 ** i)
 
 
 def tr(code, **body):
