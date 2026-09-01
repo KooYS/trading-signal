@@ -347,5 +347,7 @@ cross join lateral (
   `TR_SIGNAL09`의 `noticeCode:"TIME_OPEN"` + `remainTime` 으로 아직 미발생 상태인지 구분 가능.
 - 신호 발생 시각은 **20분 그리드**에 고정된다(`09:20, 09:40, … 15:20`). 폴링 주기를 20분으로 잡으면 딱 맞고,
   발생 직후를 잡으려면 몇 분 오프셋을 두는 게 낫다.
-- 해외 IP(GitHub Actions 러너)에서 `api.thinkpool.com`이 **간헐적으로 타임아웃**난다. 재시도 필요.
+- **해외 IP 차단**: `api.thinkpool.com`이 미국(GitHub Actions 러너)에서 9회 중 4회 30초 타임아웃.
+  서울(AWS ap-northeast-2)에서는 5/5 성공에 7~27ms. 수집기는 반드시 국내 리전에서 돌려야 한다.
+- `TR_SIGNAL07`이 일부 종목(예: `0117P0`)에 **`stockName`을 안 준다.** `GET /common/codename/{code}` 로 보충할 것.
 - 무단 복제·재배포 금지 고지(사이트 하단)가 있으므로 **개인 모니터링 용도로 한정**. 데이터 재배포/상용 활용은 별도 판단 필요.

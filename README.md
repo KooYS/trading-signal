@@ -27,13 +27,35 @@ python3 collect.py backfill   # 오늘 종목 최근 이력 (--full 로 전 페�
 
 Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).
 테이블 `signal` — 스키마·설계 근거는 [`schema.sql`](schema.sql).
-
-RLS 켜져 있고 정책이 없다 = **service_role 키만 쓴다.** 레포 Settings → Secrets에 등록:
-
-- `SUPABASE_URL` = `https://fvwwxhdufcqpcyysfdgg.supabase.co`
-- `SUPABASE_KEY` = service_role 키 (대시보드 Settings → API Keys)
-
-GitHub Actions가 평일 20분마다 `poll`, KST 16:35에 `backfill` 을 돈다.
-
 라운드(B→S 한 사이클) 분석은 `signal_round` 뷰를 쓴다. 같은 날 B/S가 동시에 나는
 케이스가 20건 있고 순서가 섞여 있어서, 날짜로 lag() 짝짓기를 하면 틀린다.
+
+## 배포 — AWS Lambda (ap-northeast-2)
+
+**서울 리전이어야 한다.** thinkpool이 해외 IP를 막는다: GitHub Actions(미국) 러너에서
+9회 중 4회 실패(30초 타임아웃)했고, 서울에서는 5/5 성공에 7~27ms다.
+
+`collect.py`는 의존성이 없어서(stdlib만) 파일 하나 zip이면 배포 끝이다.
+
+```
+zip collect.zip collect.py
+aws lambda update-function-code --function-name trading-signal-collect \
+  --zip-file fileb://collect.zip
+```
+
+| 리소스 | 이름 |
+|---|---|
+| Lambda | `trading-signal-collect` (python3.13/arm64, 300s, 256MB) |
+| 실행 역할 | `trading-signal-collect-role` |
+| 스케줄러 역할 | `trading-signal-scheduler-role` (해당 함수만 invoke) |
+| 스케줄 | `trading-signal-poll` — `cron(3,23,43 9-15 ? * MON-FRI *)` KST |
+| 스케줄 | `trading-signal-backfill` — `cron(38 16 ? * MON-FRI *)` KST |
+
+키는 Lambda 환경변수 `SUPABASE_URL` / `SUPABASE_KEY`(service_role 또는 `sb_secret_`)에 있다.
+RLS가 켜져 있고 정책이 없어서 publishable 키로는 401이 난다.
+
+수동 실행:
+```
+aws lambda invoke --function-name trading-signal-collect \
+  --cli-binary-format raw-in-base64-out --payload '{"cmd":"backfill"}' /dev/stdout
+```

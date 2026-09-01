@@ -79,9 +79,9 @@ def live_row(flag, item, live):
             "profit_rate": float(d["profitRate"]) if ok and flag == "S" else None}
 
 
-def hist_row(head, r):
+def hist_row(code, name, r):
     """TR_SIGNAL07 list_SigChart 항목 → 원장 행. trade_time 키 없음(보존)."""
-    return {"stock_code": head["stockCode"], "stock_name": head["stockName"],
+    return {"stock_code": code, "stock_name": name,
             "trade_date": _d(r["td"]), "trade_flag": r["tf"],
             "trade_price": int(r["tp"]),
             "profit_rate": float(r["pr"]) if r.get("pr") else None}
@@ -106,11 +106,14 @@ def poll():
 def backfill(codes, full=False):
     rows = []
     for c in codes:
-        page = 0
+        page, name = 0, None
         while True:
             head = tr("TR_SIGNAL07", stockCode=c, pageNo=page, pageItemSize=50)
             chart = head.get("list_SigChart") or []
-            rows += [hist_row(head, r) for r in chart]
+            # 일부 종목(예: 0117P0)은 TR_SIGNAL07에 stockName이 없다 → REST로 보충
+            name = name or head.get("stockName") \
+                or req(f"{API}/common/codename/{c}")["stockName"]
+            rows += [hist_row(c, name, r) for r in chart]
             if not full or not chart or page + 1 >= int(chart[0]["totalPageSize"]):
                 break
             page += 1
@@ -127,12 +130,24 @@ def check():
     assert live_row("S", item, live)["profit_rate"] == -0.79           # S행만 실현수익률
     stale = dict(item, tradeDttm="20260830093000")                     # 시각 불일치 → 가격 폐기
     assert live_row("B", stale, live)["trade_price"] is None
-    h = hist_row({"stockCode": "465480", "stockName": "인스피언"},
+    h = hist_row("465480", "인스피언",
                  {"tf": "S", "td": "20260831", "tp": "3455", "pr": "22.74"})
     assert "trade_time" not in h and h["profit_rate"] == 22.74, h
-    assert hist_row({"stockCode": "1", "stockName": "x"},
-                    {"tf": "B", "td": "20260731", "tp": "2815"})["profit_rate"] is None
+    assert hist_row("1", "x", {"tf": "B", "td": "20260731", "tp": "2815"})["profit_rate"] is None
+    # TR_SIGNAL07이 stockName을 안 주는 종목이 있다(0117P0). 이름은 호출자가 넣는다
+    assert hist_row("0117P0", "피스피스스튜디오",
+                    {"tf": "S", "td": "20260901", "tp": "5570", "pr": "2.96"}
+                    )["stock_name"] == "피스피스스튜디오"
     print("check ok")
+
+
+def lambda_handler(event, _context):
+    # thinkpool이 해외 IP를 막아서 서울(ap-northeast-2)에서 돈다. §7 참고
+    cmd = (event or {}).get("cmd", "poll")
+    if cmd == "backfill":
+        return {"cmd": cmd, "upserted": backfill(
+            sorted({x["stockCode"] for _, x in today_codes()}))}
+    return {"cmd": cmd, "upserted": poll()}
 
 
 if __name__ == "__main__":
