@@ -28,8 +28,15 @@ python3 collect.py backfill   # 오늘 종목 매매이력 전량
 python3 collect.py news       # 오늘 종목 최근 뉴스 (Google News RSS, 키 불필요)
 python3 collect.py news_backfill 2026-08   # 월 단위 뉴스 소급
 python3 collect.py fund       # 펀더멘탈 (토스). poll 이 자동으로 함께 채운다
-python3 collect.py flow       # 외국인·기관 순매매 20일치 (네이버 금융)
+python3 collect.py flow       # 외국인·기관 순매매 60일치 (토스)
+python3 collect.py price      # 일별 시세 1페이지(약 15개월)
+python3 collect.py price_backfill 20   # 일별 시세를 20페이지까지 소급
+python3 collect.py fin        # 분기 매출·순이익·영업이익 5년치
 ```
+
+`price` 는 한 번에 다 안 온다. `count` 상한이 300~499 사이고 응답의
+`nextDateTime` 을 `?from=` 으로 되돌려줘야 그 이전 구간이 온다. 1페이지가
+약 300거래일(15개월)이라 `price_backfill 20` 이면 20년 남짓이다.
 
 Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).
 테이블 `signal` — 스키마·설계 근거는 [`schema.sql`](schema.sql).
