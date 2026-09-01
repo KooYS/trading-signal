@@ -6,7 +6,7 @@
   news [code…]               오늘 신호 종목의 최근 뉴스 (Google News RSS).
   news_backfill YYYY-MM…     해당 월의 신호 종목 뉴스를 월 단위로 소급 수집.
   fund [code…]               오늘 신호 종목의 펀더멘탈 (토스증권). 하루 1행 스냅샷.
-  flow [code…]               외국인·기관 순매매 20일치 (네이버 금융).
+  flow [code…]               개인·외국인·기관 순매매 60일치 (토스증권).
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
 import hashlib, json, os, re, ssl, sys, time, urllib.error, urllib.parse
@@ -23,7 +23,6 @@ except ImportError:
 API = "https://api.thinkpool.com"
 GNEWS = "https://news.google.com/rss/search"
 TOSS = "https://wts-info-api.tossinvest.com/api"
-NAVER_FRGN = "https://finance.naver.com/item/frgn.naver"
 RASSI = "https://rassiapp.thinkpool.com:47700/rassi_ext"
 H = {"Origin": "https://www.thinkpool.com", "User-Agent": "Mozilla/5.0",
      "Content-Type": "application/json", "Accept": "application/json"}
@@ -128,21 +127,34 @@ def poll():
         live.update({d["stockCode"]: d
                      for d in tr("TR_SIGNAL21", list_Stock=codes[i:i + 100])})
     n = upsert([live_row(f, x, live) for f, x in items])
-    # 펀더멘탈은 하루 1행이면 충분하다. 아직 없는 종목만 채우면
+    # 펀더멘탈·수급은 하루 1행이면 충분하다. 아직 없는 종목만 채우면
     # 그날 첫 폴링이 전부 긁고 이후엔 신규 편입분만 몇 건 붙는다.
-    try:
-        m = fund(missing_fund(codes))
-    except Exception as e:
-        m = 0                              # 신호 적재가 우선. 토스 장애로 폴링이 죽으면 안 된다
-        print(f"fund skipped: {e}", file=sys.stderr)
-    return {"signals": n, "fundamentals": m}
+    out = {"signals": n}
+    for name, fn, missing in (("fundamentals", fund, missing_today("fundamental", "as_of")),
+                              ("flows", flow, missing_today("flow", "trade_date"))):
+        try:
+            out[name] = fn([c for c in codes if c in missing])
+        except Exception as e:
+            out[name] = 0        # 신호 적재가 우선. 토스 장애로 폴링이 죽으면 안 된다
+            print(f"{name} skipped: {e}", file=sys.stderr)
+    return out
 
 
-def missing_fund(codes):
+def missing_today(table, date_col):
+    """오늘자 행이 이미 있는 종목 집합의 여집합을 위해, 있는 쪽을 돌려준다."""
     day = time.strftime("%Y-%m-%d")
     have = {r["stock_code"] for r in
-            sb_get(f"fundamental?select=stock_code&as_of=eq.{day}&limit=2000")}
-    return [c for c in codes if c not in have]
+            sb_get(f"{table}?select=stock_code&{date_col}=eq.{day}&limit=5000")}
+    return _NotIn(have)
+
+
+class _NotIn:
+    """`c in missing` 이 '아직 없다'는 뜻이 되도록 뒤집는 얇은 래퍼."""
+    def __init__(self, have):
+        self.have = have
+
+    def __contains__(self, code):
+        return code not in self.have
 
 
 def backfill(codes):
@@ -287,50 +299,42 @@ def fund(codes):
     return upsert(rows, "fundamental", "stock_code,as_of")
 
 
-def _int(t):
-    """'+6,408' / '-12,213' / '294,839' → int. 빈 값이면 None."""
-    t = t.replace(",", "").replace("+", "").strip()
-    if not t or t in ("-", "N/A"):
-        return None
-    try:
-        return int(t)
-    except ValueError:
-        return None
-
-
-def flow_rows(code, html_text):
-    """네이버 금융 frgn 페이지 → flow 행. 열 순서는 고정이다:
-    날짜 | 종가 | 전일비 | 등락률 | 거래량 | 기관순매매 | 외국인순매매 | 보유주수 | 보유율"""
-    import html as _h
-    rows = []
-    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html_text, re.S):
-        if not re.search(r"\d{4}\.\d{2}\.\d{2}", tr):
-            continue
-        c = [_h.unescape(re.sub(r"<[^>]+>", "", x)).replace("\xa0", " ").strip()
-             for x in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
-        c = [x for x in c if x]
-        if len(c) < 9:
-            continue
-        rows.append({
-            "stock_code": code, "trade_date": c[0].replace(".", "-"),
-            "close_price": _int(c[1]),
-            "change_rate": float(c[3].replace("%", "").replace("+", "") or 0),
-            "volume": _int(c[4]), "inst_net": _int(c[5]), "foreign_net": _int(c[6]),
-            "foreign_hold": _int(c[7]),
-            "foreign_rate": float(c[8].replace("%", "") or 0),
+def flow_rows(code, body):
+    """토스 trading-trend → flow 행.
+    네이버(frgn)도 같은 데이터를 주지만 하루 늦고 20일치뿐이라 토스를 쓴다.
+    당일치는 장마감 직후 잠정값이고 20시경 확정된다 → src_updated_at 로 판단."""
+    out = []
+    for x in body:
+        base, close = x.get("base"), x.get("close")
+        out.append({
+            "stock_code": code, "trade_date": x["baseDate"],
+            "close_price": close,
+            "change_rate": round(100.0 * (close - base) / base, 2) if base and close else None,
+            "volume": (x.get("individualsBuyVolume") or 0) + (x.get("foreignerBuyVolume") or 0)
+                      + (x.get("institutionBuyVolume") or 0),
+            "indiv_net": x.get("netIndividualsBuyVolume"),
+            "foreign_net": x.get("netForeignerBuyVolume"),
+            "inst_net": x.get("netInstitutionBuyVolume"),
+            "pension_net": x.get("netPensionFundBuyVolume"),
+            "trust_net": x.get("netTrustBuyVolume"),
+            "foreign_hold": x.get("foreignerHoldingVolume"),
+            "foreign_rate": x.get("foreignerRatio"),
+            "src_updated_at": x.get("updatedAt"),
         })
-    return rows
+    return out
 
 
-def flow(codes):
+def flow(codes, size=60):
     rows, fail = [], []
     for c in codes:
         try:
-            raw = req(f"{NAVER_FRGN}?code={c}", headers={"User-Agent": H["User-Agent"]}, raw=True)
-            rows += flow_rows(c, raw.decode("euc-kr", errors="ignore"))
+            r = req(f"{TOSS}/v1/stock-infos/trade/trend/trading-trend"
+                    f"?productCode=A{c}&size={size}",
+                    headers={"User-Agent": H["User-Agent"]})["result"]["body"]
+            rows += flow_rows(c, r)
         except Exception as e:
             fail.append((c, str(e)[:50]))
-        time.sleep(0.25)
+        time.sleep(0.2)
     if fail:
         print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
     return upsert(rows, "flow", "stock_code,trade_date")

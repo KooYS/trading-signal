@@ -89,14 +89,19 @@ select distinct on (stock_code) *,
             then round(100.0 * (close_price - low_52w) / (high_52w - low_52w), 1) end as pos_52w
 from fundamental order by stock_code, as_of desc;
 
--- 투자자별 매매동향 (네이버 금융 frgn). 일별 20행씩 받아 누적.
+-- 투자자별 매매동향 (토스 trading-trend). 60일치.
+-- 네이버 frgn 도 같은 데이터를 주지만 하루 늦고 20일치라 토스를 쓴다.
+-- 당일치는 장마감 직후 잠정값이고 20시경 확정된다 → src_updated_at 로 판단.
 create table if not exists flow (
   stock_code   text not null,
   trade_date   date not null,
   close_price  integer, change_rate numeric(8,2), volume bigint,
-  inst_net     bigint,            -- 기관 순매매량 (+매수 / -매도)
-  foreign_net  bigint,            -- 외국인 순매매량
+  indiv_net    bigint,            -- 개인 순매수
+  inst_net     bigint,            -- 기관 순매수 (+매수 / -매도)
+  foreign_net  bigint,            -- 외국인 순매수
+  pension_net  bigint, trust_net bigint,
   foreign_hold bigint, foreign_rate numeric(6,2),
+  src_updated_at timestamptz,
   collected_at timestamptz not null default now(),
   primary key (stock_code, trade_date)
 );
