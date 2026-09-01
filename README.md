@@ -7,6 +7,7 @@
 - [`docs/thinkpool-signal-api.md`](docs/thinkpool-signal-api.md) — 엔드포인트·인증 모델·응답 스키마 역설계 스펙 (라이브 검증 완료)
 - [`docs/google-news-rss.md`](docs/google-news-rss.md) — Google News RSS 스펙. 키 없이 정적 수집, 날짜 창으로 무제한 소급
 - [`docs/toss-invest-api.md`](docs/toss-invest-api.md) — 토스증권 wts-info-api 스펙. PER/PBR/ROE·시총·52주·매출구성, 인증 불필요
+- [`docs/backtest.md`](docs/backtest.md) — **보조지표 검증 결과.** 무엇이 통했고 무엇이 안 통했나
 
 ## 핵심
 
@@ -99,6 +100,12 @@ Secrets 에 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` 가 필요하다
 
 `web/` 이 Vercel 프로젝트다. `web/api/data.js` 가 service_role 키를 서버에만 두고
 `page_live` 뷰를 프록시한다. 브라우저는 키를 못 본다.
+
+매수 카드는 **과열도 낮은 순**이다. 4축 진입 점수(수익성·밸류·타이밍·규모)는
+6,369 라운드에서 무효로 확인돼 걷어냈다 — 국면 따라 부호가 뒤집힌다. 대신 728일
+일내 랭킹 검정에서 살아남은 것만 점수로 쓴다: **IR 공시 가점**(+3.11%p, 8년 연속
+양수)과 **과열도 감점**(20일 밴드위치·20일선 이격·매물대 대비). 수급·펀더멘탈·
+공급계약·뉴스·거래량은 회색 정보 배지로만 남긴다. 근거는 [`docs/backtest.md`](docs/backtest.md).
 
 탭은 신호의 일생 순서다 — **오늘 매수 → 진행중 → 오늘 매도 → 청산**. 오늘 매수·매도는
 `trade_date = current_date` 라 하루만 살고, 진행중은 "마지막 신호가 B인 종목"의 현재

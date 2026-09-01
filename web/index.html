@@ -103,6 +103,8 @@ h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .tag.bad{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-bg)}
 .tag.na{color:var(--muted);background:transparent;border:1px dashed var(--line)}
 .tag.flow{color:var(--news);background:var(--news-bg);border:1px solid var(--news-bg)}
+/* 검증에서 무효로 나온 것들. 검증된 배지(ok/bad)와 섞이지 않게 눌러둔다 */
+.tag.info{color:var(--muted);background:transparent;border:1px solid var(--line-soft);font-weight:400}
 .flag{font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:2px}
 .flag.B{color:var(--buy);background:var(--buy-bg)}
 .flag.S{color:var(--sell);background:var(--sell-bg)}
@@ -115,12 +117,15 @@ h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .score-row{display:flex;align-items:baseline;gap:7px}
 .score-n{font-size:27px;font-weight:600;letter-spacing:-.03em;line-height:1}
 .score-l{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.score-h{font-size:10px;color:var(--muted);font-weight:300;margin-left:auto}
 .axes{display:grid;gap:4px}
-.axis{display:grid;grid-template-columns:38px 1fr 24px;align-items:center;gap:7px;font-size:11px}
-.axis span:first-child{color:var(--muted);font-weight:300}
+.axis{display:grid;grid-template-columns:58px 1fr 46px;align-items:center;gap:6px;font-size:11px}
+.axis span:first-child{color:var(--muted);font-weight:300;white-space:nowrap}
 .track{height:4px;background:var(--sunk);border-radius:2px;overflow:hidden}
 .fill{height:100%;background:var(--bar);border-radius:2px}
 .axis .v{text-align:right;color:var(--ink-2);font-weight:500}
+.fill.hot{background:var(--buy)}
+.score-n.hot{color:var(--buy)} .score-n.cool{color:var(--sell)}
 .axis.na .fill{background:var(--line)}
 .axis.na .v{color:var(--muted)}
 
@@ -245,7 +250,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);font-si
 <header class="top">
   <div class="top-in">
     <h1>구영서의 AI 매매 신호기</h1>
-    <p class="sub">매수 신호를 진입 점수 순으로 세우고, 근거(뉴스)와 재무를 함께 붙였다.<span class="who">개인 모니터링</span></p>
+    <p class="sub">매수 신호를 과열도 낮은 순으로 세운다. 회색 배지는 검증에서 무효로 나온 정보성 항목이다.<span class="who">개인 모니터링</span></p>
     <dl class="scoreboard" id="score"></dl>
   </div>
 </header>
@@ -323,10 +328,10 @@ function star(code) {
 const metricRows = () => [
   ["오늘 매수 신호", BUYS.length + "건", "오늘 새로 뜬 것만"],
   ["진행중 신호", OPEN.length + "종목", "이전 매수, 매도 대기"],
-  ["근거 있는 매수", M.buy_news + "건", "신호 전 7일 내 기사"],
-  ["적자 기업", M.buy_loss + "건", "ROE 또는 PER 음수"],
+  ["IR 공시 있음", BUYS.filter(c => c.ir).length + "건", "유일하게 검증된 가점"],
   ["신호 승률", M.win + "%", M.rounds.toLocaleString() + "라운드"],
-  ["라운드당 기대값", pct(M.exp), "이길때 " + pct(M.win_avg) + " / 질때 " + pct(M.loss_avg), true],
+  ["라운드당 기대값", pct(M.exp), "이길때 " + pct(M.win_avg) + " / 질때 " + pct(M.loss_avg)],
+  ["시장 대비 초과", "+0.71%p", "12년 6,369라운드. 신호의 실제 크기", true],
 ];
 function renderScore() {
   const score = document.getElementById("score");
@@ -341,7 +346,13 @@ function renderScore() {
   }
 }
 
-const AXES = [["profit", "수익성"], ["value", "밸류"], ["timing", "타이밍"], ["size", "규모"]];
+/* 과열도의 세 요소. 셋 다 "그날 후보 중 위쪽이면 손해"로 나온 것들이다.
+   0~100 백분위로 눕혀서 보여준다 — 원값은 단위가 제각각이라 비교가 안 된다 */
+const HEAT_PARTS = [
+  ["pos", "20일 밴드", v => v == null ? null : v, v => v + "%"],
+  ["ma20", "20일선 이격", v => v == null ? null : Math.max(0, Math.min(100, (v + 20) * 2.5)), v => pct(v)],
+  ["vwap", "매물대 대비", v => v == null ? null : Math.max(0, Math.min(100, (v + 30) * 1.67)), v => pct(v)],
+];
 
 function buyCard(c, rank) {
   const pre = c.news.filter(n => n.pre), post = c.news.filter(n => !n.pre);
@@ -364,8 +375,11 @@ function buyCard(c, rank) {
   const L = el("div", "pane-l");
 
   const sr = el("div", "score-row");
-  sr.append(el("span", "score-n mono", c.score));
-  sr.append(el("span", "score-l", "진입 점수"));
+  const h = c.heat;
+  sr.append(el("span", "score-n mono" + (h == null ? "" : h >= 70 ? " hot" : h <= 30 ? " cool" : ""),
+                h == null ? "—" : h));
+  sr.append(el("span", "score-l", "과열도"));
+  sr.append(el("span", "score-h", "낮을수록 좋음"));
   L.append(sr);
 
   const now = el("div", "nowbox");
@@ -384,15 +398,15 @@ function buyCard(c, rank) {
   L.append(now);
 
   const ax = el("div", "axes");
-  for (const [k, label] of AXES) {
-    const v = c.sc[k];
-    const row = el("div", "axis" + (v == null ? " na" : ""));
+  for (const [k, label, toPct, fmt] of HEAT_PARTS) {
+    const raw = c.hp ? c.hp[k] : null, w = toPct(raw);
+    const row = el("div", "axis" + (raw == null ? " na" : ""));
     row.append(el("span", null, label));
     const t = el("div", "track");
-    const f = el("div", "fill");
-    f.style.width = ((v == null ? 12 : v) / 25 * 100) + "%";
+    const f = el("div", "fill" + (w != null && w >= 70 ? " hot" : ""));
+    f.style.width = (w == null ? 50 : w) + "%";
     t.append(f); row.append(t);
-    row.append(el("span", "v mono", v == null ? "—" : v));
+    row.append(el("span", "v mono", raw == null ? "—" : fmt(raw)));
     ax.append(row);
   }
   L.append(ax);
@@ -537,7 +551,7 @@ const TABS = [
 const HINT = {
   open:   "이전 날짜에 매수 신호가 났고 아직 매도 신호가 안 난 것. 오늘의 진입 후보가 아니라 경과 관찰 대상이다.",
   all:    "오늘 발생한 신호 전부. 최근 순.",
-  buy:    "오늘 새로 발생한 매수 신호만. 진입 점수 순이며, 점수는 수익성·밸류·타이밍·규모 4축 균등(각 25점)이고 카드의 태그가 그 근거다.",
+  buy:    "오늘 새로 발생한 매수 신호. 과열도 낮은 순으로 세운다 — 그날 후보 중 이미 많이 오른 것을 사면 손해라는 게 728일 검정에서 나온 유일한 결과다.",
   sell:   "오늘 매도 신호가 난 것. 그 종목을 언제 얼마에 샀다고 신호했는지 함께 붙였다.",
   closed: "매도로 끝난 라운드. 최근 30일. 매수 신호가에 사서 매도 신호가에 팔았다고 가정한 실현수익률이고 수수료·세금·슬리피지는 빠져 있다.",
 };
@@ -581,17 +595,23 @@ function syncCounts() {
 }
 
 /* 점수의 근거를 문장 대신 태그로. 카드를 보면 왜 위에 있는지 읽힌다 */
+/* 배지는 두 종류다.
+   ok/bad = 6,369 라운드에서 검증된 것. 그 외는 전부 info — 무효로 확인됐지만
+   판단에 참고가 되니 남긴다. 색으로 구분해서 검증된 것처럼 보이지 않게 한다. */
 function badges(c) {
   const out = [];
-  if (c.loss) out.push(["적자", "bad"]);
-  else out.push(["흑자", "ok"]);
-  if (c.pbr != null && c.pbr < 1) out.push(["저평가 PBR " + Number(c.pbr).toFixed(1), "ok"]);
-  if (c.roe != null && c.roe >= 15) out.push(["고ROE " + Number(c.roe).toFixed(0) + "%", "ok"]);
-  if (c.gap != null && c.gap > 3) out.push(["진입 늦음 " + pct(c.gap), "bad"]);
-  if (c.fgn >= 3) out.push(["외국인 " + c.fgn + "일 연속 순매수 " + qty(c.fgn5), "flow"]);
-  if (c.ins >= 3) out.push(["기관 " + c.ins + "일 연속 순매수 " + qty(c.ins5), "flow"]);
-  if (c.fgn === 0 && c.ins === 0 && c.fasof) out.push(["외국인·기관 당일 순매도", "bad"]);
-  if (c.miss > 0) out.push(["지표 없음", "na"]);
+  if (c.ir) out.push(["IR 공시 " + String(c.ir).slice(5), "ok"]);       // +3.11%p, 8년 연속
+  if (c.heat != null && c.heat >= 70) out.push(["과열 상위 " + c.heat, "bad"]);
+  if (c.heat != null && c.heat <= 30) out.push(["눌림 하위 " + c.heat, "ok"]);
+  for (const d of (c.disc || []).slice(0, 2))                            // 정보
+    out.push([String(d.t).replace(/^\[[^\]]*\]/, "").trim().slice(0, 18), "info"]);
+  if (c.fgn >= 3) out.push(["외국인 " + c.fgn + "일 " + qty(c.fgn5), "info"]);
+  if (c.ins >= 3) out.push(["기관 " + c.ins + "일 " + qty(c.ins5), "info"]);
+  if (c.vol != null && c.vol >= 2) out.push(["거래량 " + Number(c.vol).toFixed(1) + "배", "info"]);
+  if (c.loss) out.push(["적자", "info"]);
+  if (c.pbr != null && c.pbr < 1) out.push(["PBR " + Number(c.pbr).toFixed(1), "info"]);
+  if (c.gap != null && c.gap > 3) out.push(["진입 늦음 " + pct(c.gap), "info"]);
+  if (c.heat == null) out.push(["지표 없음", "na"]);
   return out;
 }
 
@@ -615,10 +635,10 @@ function render() {
     grid.hidden = false; table.hidden = true;
     grid.replaceChildren(...pick(BUYS).map((c, i) => buyCard(c, i + 1)));
     lede.append(document.createTextNode(
-      " 지표가 없는 축(ETF)은 만점이 아니라 중립 12점으로 본다. 이 점수는 매수 추천이 아니라 정렬 기준이다."
+      " 과열도는 절대 기준이 아니라 그날 후보들 사이의 상대 순위(0~100)다. 회색 배지는 검증에서 무효로 나온 정보성 항목이다."
       + (FLOW_ASOF ? ` 수급은 ${FLOW_ASOF} 기준이고 당일치는 20시경 확정된다.` : "")
       + " ★ 를 눌러두면 진행중·청산까지 따라다니고, 팔리면 맨 위에 알림이 뜬다."));
-    cnt.textContent = `${n}건 · 진입 점수 높은 순`;
+    cnt.textContent = `${n}건 · 과열도 낮은 순`;
     return;
   }
   grid.hidden = true; table.hidden = false;
@@ -700,14 +720,14 @@ function openTable() {
 function allTable() {
   const rows = [
     ...pick(BUYS).map(b => ({ f: "B", name: b.name, code: b.code, mkt: b.mkt, time: b.time,
-                        price: b.price, now: b.now, extra: b.score == null ? "—" : b.score + "점" })),
+                        price: b.price, now: b.now, extra: b.heat == null ? "—" : "과열 " + b.heat })),
     ...pick(SELLS).map(s => ({ f: "S", name: s.name, code: s.code, mkt: s.mkt, time: s.time,
                          price: s.price, now: s.now, extra: s.profit == null ? "—" : pct(s.profit) })),
   ].sort((a, b) => b.time.localeCompare(a.time));
 
   const t = el("table");
   const tb = tableHead(t, [["구분", 0], ["종목", 0], ["코드", 0], ["시장", 0], ["시각", 0],
-                           ["신호가", 1], ["현재가", 1], ["점수 / 실현", 1]]);
+                           ["신호가", 1], ["현재가", 1], ["과열도 / 실현", 1]]);
   for (const r of rows) {
     const tr = el("tr");
     tr.append(starCell(r.code));
@@ -720,7 +740,7 @@ function allTable() {
     tr.append(td("시각", "mono", r.time));
     tr.append(td("신호가", "r mono", won(r.price)));
     tr.append(td("현재가", "r mono", won(r.now)));
-    tr.append(td("점수 / 실현", "r mono", r.extra));
+    tr.append(td("과열도 / 실현", "r mono", r.extra));
     tb.append(tr);
   }
   t.append(tb);
@@ -843,7 +863,9 @@ document.getElementById("foot").textContent =
   `신호 ${M.rounds.toLocaleString()}라운드 · 기사 ${M.news.toLocaleString()}건 · ${M.stocks}종목. ` +
   `데이터 출처는 thinkpool.com 매매신호, Google News RSS, 토스증권. 개인 모니터링 목적으로만 수집했고 재배포하지 않는다. ` +
   `과거 성적은 수수료·세금·슬리피지를 반영하지 않았고, 추적 종목은 신호에 등장한 것에 한정되어 전체 시장을 대표하지 않는다. ` +
-  `진입 점수의 각 축이 실제 수익률과 상관있는지는 아직 검증하지 않았다. 투자 판단의 근거로 쓸 수 없다. ` +
+  `보조지표를 6,369라운드로 검증한 결과: 수급·펀더멘탈 4축·공급계약 공시·뉴스 건수·거래량 급증은 모두 무효였다. ` +
+  `살아남은 것은 IR 공시(초과 +3.11%p, 8년 연속 양수)와 과열도 감점(t=-1.9~-2.4) 둘뿐이고, 그마저 크기가 1~3%p인데 ` +
+  `라운드 편차는 14.6%p다. 한두 종목을 고르는 데 쓰기엔 잡음에 묻힌다. 투자 판단의 근거로 쓸 수 없다. ` +
   `관심 종목(★)과 알림 확인 여부는 이 브라우저에만 저장되고 서버로 가지 않는다 — 폰과 PC 가 따로 논다.`;
 
 renderScore();

@@ -197,6 +197,55 @@ create index if not exists disclosure_code_dt_idx on disclosure (stock_code, rce
 create index if not exists disclosure_dt_idx      on disclosure (rcept_dt desc);
 alter table disclosure enable row level security;
 
+-- ── 검증용 파생 객체 ────────────────────────────────────────────────
+-- 검증 결과와 방법은 docs/backtest.md 참조.
+-- ⚠️ matview 는 price 를 채운 뒤 반드시 refresh 해야 한다. 안 하면 화면이
+--    조용히 옛 지표로 점수를 매긴다.
+
+-- 기술적 지표. ⚠️ close_price 가 integer 라 ::numeric 을 빼면 정수 나눗셈이 되어
+-- 6900/7275 = 0 → -100% 가 나온다. 실제로 ret5·ret20·vs_hi60 이 그렇게 깨져 있었다.
+create materialized view if not exists tech_daily as
+with p as (
+  select stock_code, trade_date, close_price c, volume v,
+    avg(close_price) over w5 ma5, avg(close_price) over w20 ma20,
+    avg(close_price) over w60 ma60, avg(volume) over w20 vol20,
+    max(close_price) over w20 hi20, min(close_price) over w20 lo20,
+    max(close_price) over w60 hi60,
+    sum(close_price::numeric * volume) over w60 / nullif(sum(volume) over w60, 0) vwap60,
+    lag(close_price, 5)  over (partition by stock_code order by trade_date) c5,
+    lag(close_price, 20) over (partition by stock_code order by trade_date) c20,
+    count(*) over w60 n60
+  from price
+  window w5  as (partition by stock_code order by trade_date rows between 4  preceding and current row),
+         w20 as (partition by stock_code order by trade_date rows between 19 preceding and current row),
+         w60 as (partition by stock_code order by trade_date rows between 59 preceding and current row)
+)
+select stock_code, trade_date, c close_price,
+  round(100.0*(c::numeric/nullif(ma5,0)  - 1), 2) gap_ma5,
+  round(100.0*(c::numeric/nullif(ma20,0) - 1), 2) gap_ma20,
+  round(100.0*(c::numeric/nullif(ma60,0) - 1), 2) gap_ma60,
+  (ma5 > ma20 and ma20 > ma60) aligned,
+  round((v::numeric / nullif(vol20,0)), 2) vol_ratio,
+  round(100.0*(c - lo20)::numeric / nullif(hi20 - lo20,0), 1) pos20,   -- 20일 밴드 내 위치
+  round(100.0*(c::numeric/nullif(hi60,0) - 1), 2) vs_hi60,
+  round(100.0*(c::numeric/nullif(vwap60,0) - 1), 2) vs_vwap60,          -- 매물대 대용
+  round(100.0*(c::numeric/nullif(c5,0)  - 1), 2) ret5,
+  round(100.0*(c::numeric/nullif(c20,0) - 1), 2) ret20
+from p where n60 >= 60;
+create index if not exists tech_idx on tech_daily (stock_code, trade_date desc);
+
+-- 등가중 시장지수. 초과수익(alpha) 계산의 기준선이다.
+-- 액면분할·병합으로 튀는 값을 막으려고 일간수익률 ±35% 밖은 버린다.
+create materialized view if not exists mkt_index as
+with ret as (
+  select stock_code, trade_date,
+    close_price::numeric/nullif(lag(close_price) over (partition by stock_code order by trade_date),0)-1 r
+  from price
+), daily as (select trade_date, avg(r) mkt_r from ret where r between -0.35 and 0.35 group by 1)
+select trade_date, exp(sum(ln(1+mkt_r)) over (order by trade_date))::numeric lvl
+from daily where mkt_r > -1;
+create index if not exists mkt_idx on mkt_index (trade_date);
+
 -- 화면용 단일 JSON: page_live. 정의는 Supabase 마이그레이션
 -- page_live_add_closed_rounds_and_buy_context 참조.
 --   buys/sells   = trade_date = current_date (하루만 산다)
