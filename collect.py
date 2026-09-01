@@ -3,9 +3,14 @@
 
   poll                       오늘의 매수/매도 신호 (3 request). 20분마다.
   backfill [code…]           TR_SIGNAL07 매매이력 전량. 코드 생략 시 오늘 목록.
+  news [code…]               오늘 신호 종목의 최근 뉴스 (Google News RSS).
+  news_backfill YYYY-MM…     해당 월의 신호 종목 뉴스를 월 단위로 소급 수집.
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
-import json, os, ssl, sys, time, urllib.error, urllib.request
+import hashlib, json, os, ssl, sys, time, urllib.error, urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 
 try:                                    # ponytail: macOS 시스템 파이썬은 루트 CA가 없다
     import certifi
@@ -14,20 +19,23 @@ except ImportError:
     CTX = ssl.create_default_context()
 
 API = "https://api.thinkpool.com"
+GNEWS = "https://news.google.com/rss/search"
 RASSI = "https://rassiapp.thinkpool.com:47700/rassi_ext"
 H = {"Origin": "https://www.thinkpool.com", "User-Agent": "Mozilla/5.0",
      "Content-Type": "application/json", "Accept": "application/json"}
 
 
-def req(url, body=None, headers=H, tries=3):
+def req(url, body=None, headers=H, tries=3, raw=False):
     data = json.dumps(body).encode() if body is not None else None
     for i in range(tries):
         try:
             with urllib.request.urlopen(
                     urllib.request.Request(url, data=data, headers=headers),
                     timeout=30, context=CTX) as f:
-                raw = f.read()
-            return json.loads(raw) if raw else None  # rassi는 content-type이 text/html이라 무조건 JSON 파싱
+                body_bytes = f.read()
+            if raw:                                        # RSS(XML) 등 비-JSON 응답
+                return body_bytes
+            return json.loads(body_bytes) if body_bytes else None  # rassi는 content-type이 text/html이라 무조건 JSON 파싱
         except urllib.error.HTTPError:               # 4xx/5xx는 재시도해도 같다
             raise
         except (urllib.error.URLError, TimeoutError):
@@ -44,7 +52,7 @@ def tr(code, **body):
     return r["retData"]
 
 
-def upsert(rows):
+def upsert(rows, table="signal", on_conflict="stock_code,trade_date,trade_flag"):
     """PostgREST merge-duplicates는 payload에 있는 컬럼만 갱신한다.
     그래서 backfill이 trade_time 키를 빼면 폴링이 넣어둔 시각이 보존된다."""
     if not rows:
@@ -56,9 +64,12 @@ def upsert(rows):
         # 레거시 service_role은 JWT라 Bearer로도 보낸다. 신형 sb_secret_ 키는
         # Bearer에 실으면 JWT 파싱을 시도하다 Invalid JWT로 거절당한다.
         h["Authorization"] = f"Bearer {key}"
-    req(f'{os.environ["SUPABASE_URL"].rstrip("/")}/rest/v1/signal'
-        f'?on_conflict=stock_code,trade_date,trade_flag', rows, h)
-    return len(rows)
+    total = 0
+    for i in range(0, len(rows), 500):
+        req(f'{os.environ["SUPABASE_URL"].rstrip("/")}/rest/v1/{table}'
+            f'?on_conflict={on_conflict}', rows[i:i + 500], h)
+        total += len(rows[i:i + 500])
+    return total
 
 
 def _d(yyyymmdd):
@@ -122,6 +133,55 @@ def backfill(codes):
     return upsert(rows)
 
 
+def news_rows(code, name, xml):
+    """Google News RSS → news 행. 요약 텍스트는 RSS가 안 준다(제목만)."""
+    rows = []
+    for it in ET.fromstring(xml).findall(".//item"):
+        guid, title = it.findtext("guid"), it.findtext("title")
+        pub = it.findtext("pubDate")
+        if not (guid and title and pub):
+            continue
+        src = it.find("source")
+        rows.append({
+            "stock_code": code, "guid_hash": hashlib.md5(guid.encode()).hexdigest(),
+            # RFC 822 (예: "Tue, 01 Sep 2026 01:37:34 GMT")
+            "published_at": datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %Z")
+                            .replace(tzinfo=timezone.utc).isoformat(),
+            "title": title, "source": src.text if src is not None else None,
+            "url": it.findtext("link") or "",
+        })
+    return rows
+
+
+def fetch_news(name, window=None):
+    """window = (after, before) 'YYYY-MM-DD'. 없으면 최신 100건.
+    RSS는 100건 하드캡이고 start/num을 무시한다 → 날짜창을 쪼개서 소급한다."""
+    q = name if not window else f"{name} after:{window[0]} before:{window[1]}"
+    url = f"{GNEWS}?q={urllib.parse.quote(q)}&hl=ko&gl=KR&ceid=KR:ko"
+    return req(url, headers={"User-Agent": H["User-Agent"]}, raw=True)
+
+
+def news(codes_names):
+    rows = []
+    for code, name in codes_names:
+        rows += news_rows(code, name, fetch_news(name))
+        time.sleep(0.3)                      # ponytail: 구글에 대한 최소한의 예의
+    return upsert(rows, "news", "stock_code,guid_hash")
+
+
+def news_backfill(codes_names, months):
+    """월 단위 창으로 소급. RSS 100건 캡을 날짜로 우회한다."""
+    rows = []
+    for ym in months:
+        y, m = map(int, ym.split("-"))
+        after = f"{y}-{m:02d}-01"
+        before = f"{y + (m == 12)}-{(m % 12) + 1:02d}-01"
+        for code, name in codes_names:
+            rows += news_rows(code, name, fetch_news(name, (after, before)))
+            time.sleep(0.3)
+    return upsert(rows, "news", "stock_code,guid_hash")
+
+
 def check():
     live = {"457190": {"stockCode": "457190", "tradeDate": "20260831",
                        "tradeTime": "142000", "tradePrice": "69450", "profitRate": "-0.79"}}
@@ -149,6 +209,9 @@ def lambda_handler(event, _context):
     if cmd == "backfill":
         return {"cmd": cmd, "upserted": backfill(
             sorted({x["stockCode"] for _, x in today_codes()}))}
+    if cmd == "news":
+        return {"cmd": cmd, "upserted": news(
+            sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()}))}
     return {"cmd": cmd, "upserted": poll()}
 
 
@@ -162,5 +225,11 @@ if __name__ == "__main__":
     elif cmd == "backfill":
         codes = [a for a in args if not a.startswith("--")]
         print("upserted", backfill(codes or sorted({x["stockCode"] for _, x in today_codes()})))
+    elif cmd == "news":
+        pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
+        print("upserted", news([p for p in pairs if not args or p[0] in args]))
+    elif cmd == "news_backfill":
+        pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
+        print("upserted", news_backfill(pairs, args or [time.strftime("%Y-%m")]))
     else:
         sys.exit(__doc__)

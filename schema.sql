@@ -45,3 +45,22 @@ cross join lateral (
   limit 1
 ) b
 where s.trade_flag = 'S';
+
+-- Google News RSS 수집 기사. 스펙: docs/google-news-rss.md
+-- 같은 기사가 여러 종목 검색에 걸릴 수 있어(나열 기사) PK에 종목을 포함한다.
+create table if not exists news (
+  stock_code   text        not null,
+  guid_hash    text        not null,          -- md5(guid). guid가 126~158자 가변이라
+  published_at timestamptz not null,
+  title        text        not null,
+  source       text,                          -- 언론사명 (RSS <source>)
+  url          text        not null,          -- news.google.com 리다이렉트 (원본 아님)
+  src_api      text        not null default 'gnews',
+  collected_at timestamptz not null default now(),
+  primary key (stock_code, guid_hash)
+);
+
+create index if not exists news_code_time_idx on news (stock_code, published_at desc);
+create index if not exists news_time_idx      on news (published_at desc);
+
+alter table news enable row level security;

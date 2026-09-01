@@ -5,6 +5,7 @@
 ## 문서
 
 - [`docs/thinkpool-signal-api.md`](docs/thinkpool-signal-api.md) — 엔드포인트·인증 모델·응답 스키마 역설계 스펙 (라이브 검증 완료)
+- [`docs/google-news-rss.md`](docs/google-news-rss.md) — Google News RSS 스펙. 키 없이 정적 수집, 날짜 창으로 무제한 소급
 
 ## 핵심
 
@@ -23,6 +24,8 @@
 python3 collect.py check      # 네트워크 없이 변환 로직 검증
 python3 collect.py poll       # 오늘 신호 (3 request)
 python3 collect.py backfill   # 오늘 종목 매매이력 전량
+python3 collect.py news       # 오늘 종목 최근 뉴스 (Google News RSS, 키 불필요)
+python3 collect.py news_backfill 2026-08   # 월 단위 뉴스 소급
 ```
 
 Supabase 프로젝트 `trading-signal` (`fvwwxhdufcqpcyysfdgg`, ap-northeast-2).
