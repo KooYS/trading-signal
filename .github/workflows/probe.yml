@@ -1,0 +1,28 @@
+# 브라우저에서 버튼만 눌러 API 를 타진한다. Actions 탭 -> probe -> Run workflow.
+# 결과는 실행 요약(Summary)에 그대로 뜬다 - 로그를 뒤질 필요 없다.
+#
+# 주의: 러너는 미국이다. thinkpool 은 해외 IP 를 막지만(그래서 수집기가 서울
+# Lambda 로 갔다) 토스가 막는지는 모른다. 전부 타임아웃/차단으로 나오면
+# 그게 답이고, 그때는 서울에서 돌려야 한다.
+name: probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: '종목코드 6자리 (기본 005930 삼성전자)'
+        required: false
+        default: '005930'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: 타진
+        env:
+          DART_KEY: ${{ secrets.DART_KEY }}     # 없으면 DART 만 건너뛴다
+        run: python3 tools/probe.py "${{ inputs.code }}"

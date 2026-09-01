@@ -145,6 +145,22 @@ GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
 
 > **`c-chart`가 일별 시세다.** 손절 백테스트에 필요한 그 데이터일 가능성이 높다. `count`를 늘려 얼마나 소급되는지 확인할 것.
 
+### 타진 방법
+
+`tools/probe.py` 가 위 후보들을 한 번에 두드린다. 셋 중 편한 걸로:
+
+| 방법 | 명령 | 비고 |
+|---|---|---|
+| 로컬 | `python3 tools/probe.py [종목코드]` | 의존성 없음 |
+| GitHub Actions | Actions → probe → Run workflow | 로컬 불필요. 결과가 실행 요약에 뜬다. **러너가 미국이라 막힐 수 있다** |
+| 브라우저 | `tools/probe-console.js` 를 tossinvest.com 콘솔에 붙여넣기 | 국내 IP·같은 오리진이라 가장 확실 |
+
+`DART_KEY` 를 주면(환경변수 또는 저장소 Secret) DART 공시까지 함께 확인한다.
+
+**일봉 소급 기간이 관건이다.** 몇 년치가 나오면 현재 `bps`·`shares_out` 과 조합해
+과거 PBR·시총을 역산할 수 있고, 점수 축을 3개월이 아니라 전 구간에서 검증할 수 있다.
+3개월치뿐이면 소급은 포기하고 오늘부터 일별로 쌓아야 한다.
+
 ## 4. 우리 구현
 
 `collect.py`:
