@@ -42,8 +42,15 @@ def req(url, body=None, headers=H, tries=3, raw=False):
             if raw:                                        # RSS(XML) 등 비-JSON 응답
                 return body_bytes
             return json.loads(body_bytes) if body_bytes else None  # rassi는 content-type이 text/html이라 무조건 JSON 파싱
-        except urllib.error.HTTPError:               # 4xx/5xx는 재시도해도 같다
-            raise
+        except urllib.error.HTTPError as e:          # 4xx/5xx는 재시도해도 같다
+            # PostgREST 는 본문에 message/details/hint 를 적어 보낸다. 그걸 버리면
+            # "HTTP Error 400: Bad Request" 만 남아 원인을 못 찾는다.
+            try:
+                detail = e.read()[:800].decode("utf-8", "replace")
+            except Exception:
+                detail = ""
+            raise urllib.error.HTTPError(
+                e.url, e.code, f"{e.reason} — {detail}", e.headers, None) from None
         except (urllib.error.URLError, TimeoutError):
             # thinkpool이 해외(GitHub 러너) 접속에서 간헐 타임아웃을 낸다
             if i == tries - 1:
@@ -72,11 +79,25 @@ def sb_get(path):
     return req(f'{os.environ["SUPABASE_URL"].rstrip("/")}/rest/v1/{path}', headers=_sb_headers())
 
 
+def _finite(rows):
+    """NaN/Infinity 를 지운다.
+
+    json.loads 는 NaN·Infinity 리터럴을 float 로 받아들이고 json.dumps 는 그걸
+    그대로 내보내는데, 표준 JSON 이 아니라서 PostgREST 가 400 을 낸다.
+    실적 증감률처럼 전분기가 0 근처면 API 가 이런 값을 준다."""
+    for r in rows:
+        for k, v in r.items():
+            if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+                r[k] = None
+    return rows
+
+
 def upsert(rows, table="signal", on_conflict="stock_code,trade_date,trade_flag"):
     """PostgREST merge-duplicates는 payload에 있는 컬럼만 갱신한다.
     그래서 backfill이 trade_time 키를 빼면 폴링이 넣어둔 시각이 보존된다."""
     if not rows:
         return 0
+    rows = _finite(rows)
     h = _sb_headers(Prefer="resolution=merge-duplicates,return=minimal")
     total = 0
     for i in range(0, len(rows), 500):
@@ -421,6 +442,15 @@ def _operating(x):
     return None
 
 
+def _won(v):
+    """금액 컬럼은 bigint 다. API 가 실수로 주면 캐스팅에서 400 이 난다."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+        return None
+    return int(v)
+
+
 def fin_rows(code, rev, opi):
     """분기 실적 → financials 행. 두 엔드포인트 모두 table[] 에
     {period: 'YYYY-MM', ...} 로 분기별로 온다. period 로 합친다."""
@@ -429,15 +459,15 @@ def fin_rows(code, rev, opi):
         p = x.get("period")
         if p:
             out[p] = {"stock_code": code, "period": p,
-                      "revenue": x.get("revenue"),
-                      "net_profit": x.get("netProfit"),
+                      "revenue": _won(x.get("revenue")),
+                      "net_profit": _won(x.get("netProfit")),
                       "net_profit_ratio": x.get("netProfitRatio"),
                       "net_profit_growth": x.get("netProfitGrowthRatio")}
     for x in (opi or {}).get("table") or []:
         p = x.get("period")
         if p:
             out.setdefault(p, {"stock_code": code, "period": p})
-            out[p]["operating_income"] = _operating(x)
+            out[p]["operating_income"] = _won(_operating(x))
     return list(out.values())
 
 
@@ -502,6 +532,12 @@ def check():
                  {"table": [{"period": "2024-03", "operatingIncomeKrw": 9,
                              "someOperatingValue": 7}]})     # 이름 미상 → 환산액은 제외
     assert g[0]["operating_income"] == 7, g
+    # 금액은 bigint 다. 실수로 와도 정수로 눕히고, 못 쓸 값은 버린다
+    assert _won(5844171000000.0) == 5844171000000 and _won(None) is None
+    assert _won(float("nan")) is None and _won(True) is None and _won("1") is None
+    nan, inf = float("nan"), float("inf")
+    fx = _finite([{"a": nan, "b": inf, "c": -inf, "d": 1.5, "e": None, "f": "x"}])[0]
+    assert fx == {"a": None, "b": None, "c": None, "d": 1.5, "e": None, "f": "x"}, fx
     print("check ok")
 
 

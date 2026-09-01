@@ -152,8 +152,9 @@ create table if not exists financials (
   period            text not null,     -- 분기말 'YYYY-MM'
   revenue           bigint,            -- 매출(원)
   net_profit        bigint,            -- 순이익(원)
-  net_profit_ratio  numeric(12,4),     -- 순이익률(%)
-  net_profit_growth numeric(14,4),     -- 순이익 증감률(%)
+  -- 증감률은 전분기가 0 근처면 임의로 커진다. 자릿수를 묶어두면 overflow 로 400 이 난다
+  net_profit_ratio  numeric,           -- 순이익률(%)
+  net_profit_growth numeric,           -- 순이익 증감률(%)
   operating_income  bigint,            -- 영업이익(원)
   collected_at      timestamptz not null default now(),
   primary key (stock_code, period)
