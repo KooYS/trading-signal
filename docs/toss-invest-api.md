@@ -131,10 +131,10 @@ GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
 
 | 엔드포인트 | 추정 |
 |---|---|
-| `POST /v2/companies/A{code}/financial-statements/comprehensive` | 재무제표 |
-| `POST /v2/companies/A{code}/financial-statement-records` | 재무 항목별 이력 |
-| `POST /v2/stock-infos/revenue-and-net-profit/A{code}` | 매출·순이익 추이 |
-| `POST /v2/stock-infos/operating-income/A{code}` | 영업이익 추이 |
+| `POST /v2/companies/A{code}/financial-statements/comprehensive` | 재무제표 **✅ 확인** |
+| `POST /v2/companies/A{code}/financial-statement-records` | 재무 항목별 이력 **✅ 확인** |
+| `POST /v2/stock-infos/revenue-and-net-profit/A{code}` | 매출·순이익 추이 **✅ 확인** |
+| `POST /v2/stock-infos/operating-income/A{code}` | 영업이익 추이 **✅ 확인** |
 | `POST /v2/companies/A{code}/financial/estimate/revenue` · `/eps` | 컨센서스 추정 |
 | `GET /v1/stock-detail/ui/wts/A{code}/analyst-opinion` | 애널리스트 의견 |
 | `GET /v1/stock-infos/dividend/A{code}/summary` · `/years` | 배당 이력 |
@@ -143,7 +143,47 @@ GET /v1/stock-infos/trade/trend/trading-trend?productCode=A{code}&size=60
 | `GET /v1/c-chart/kr-s/A{code}/day:1?count=100` | 일봉 차트 ★ |
 | `GET /v1/stock-infos/A{code}/wts-badges` · `header/A{code}` | 뱃지·헤더 |
 
-> **`c-chart`가 일별 시세다.** 손절 백테스트에 필요한 그 데이터일 가능성이 높다. `count`를 늘려 얼마나 소급되는지 확인할 것.
+> **`c-chart`가 일별 시세다.** 손절 백테스트에 필요한 그 데이터일 가능성이 높다.
+
+### 1단계 타진 결과 (2026-09-01, A005930)
+
+**분기 재무 4개 전부 익명으로 열린다.** POST 본문을 빈 `{}` 로 보내도 200이 온다.
+
+- `revenue-and-net-profit`, `operating-income` — 기본 **3년치**(2023-09 ~ 2026-06, 12분기).
+  응답에 `selectedRange: {code:3, "3년"}` 과 `selectableRanges: [1년, 3년, 5년]` 이 있다.
+  **본문에 코드를 실으면 5년까지 늘어난다**(요청 형식은 2단계에서 확정).
+- `financial-statements/comprehensive` — `selectedFactor: LIABILITY_RATIO`,
+  `selectableFactors` 에 부채비율·유동비율 등. 지표를 골라 받는 구조다.
+- `financial-statement-records` — `selectedFactor: BAL(재무상태표)`,
+  `selectableFactors` 에 `INC(손익계산서)` 등.
+
+**일봉은 한 번에 다 못 받는다. 페이지네이션이다.**
+
+```
+count=100   → 200, 캔들 101건 (2026-04-06 ~ 2026-09-01)
+count=1000  → 400 Bad Request
+count=3000  → 400
+count=10000 → 400
+```
+
+상한이 있다. 그런데 응답 최상위에 **`nextDateTime: "2026-04-06T00:00:00+09:00"`** 이
+들어 있다 — 다음 페이지 커서다. 캔들은 `candles[]` 이고 한 건이
+`{dt, base, open, high, low, ...}` 다.
+
+**즉 소급은 되고, 커서를 돌려야 한다.** 파라미터 이름과 count 상한은 2단계에서 확정한다.
+
+### 타진 방법
+
+`tools/probe.py` 가 1단계, `tools/probe2-console.js` 가 2단계다. 셋 중 편한 걸로:
+
+| 방법 | 명령 | 비고 |
+|---|---|---|
+| 브라우저 | `tools/probe-console.js` / `probe2-console.js` 를 tossinvest.com 콘솔에 붙여넣기 | **국내 IP·같은 오리진이라 가장 확실.** 1단계는 이걸로 성공했다 |
+| 로컬 | `python3 tools/probe.py [종목코드]` | 의존성 없음 |
+| GitHub Actions | Actions → probe → Run workflow | 로컬 불필요. 결과가 실행 요약에 뜬다. 러너가 미국이라 막힐 수 있다 |
+
+붙여넣기가 막히면 콘솔에 `allow pasting` 을 먼저 입력한다.
+`DART_KEY` 를 주면(환경변수 또는 저장소 Secret) DART 공시까지 함께 확인한다.
 
 ### 타진 방법
 
