@@ -251,8 +251,17 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 -- 신규 종목은 하루 0.05건(0.6%)이라 신호 목록 전체를 미리 받아둬도 거의 안 샌다.
 --   create extension pg_cron;
 --   select cron.schedule('daily-tech', '30 23 * * 0-4', $$select daily_tech_refresh()$$);
+--
+-- 신규 종목은 당일 지표가 빈다 — 크론은 08:30 인데 신호는 09:03 에 나오고,
+-- 그때 처음 보는 종목이면 price 에 아무것도 없다(하루 0.05건, 전체의 0.6%).
+-- 그래서 장중에도 구멍만 메운다. 보통 0종목이라 거의 공짜다.
+--   select cron.schedule('intraday-fill', '0 0-6 * * 1-5', $$select fill_missing_tech()$$);
 -- 수집은 DB 안에서 한다 — http 확장으로 토스를 직접 부른다(Supabase 도 서울이라
 -- 지역 제한에 안 걸린다). Lambda 없이도 지표가 유지되게 하려는 것이다.
+
+-- ⚠️ page_live 와 buy_today 는 tech_daily 에 의존한다. tech_daily 를
+--    drop ... cascade 로 갈아끼우면 이 둘이 딸려 지워지고, 화면은 /api/data 404 를
+--    받는다(실제로 겪었다). 재생성할 땐 두 뷰를 반드시 같이 다시 만들 것.
 
 -- 화면용 단일 JSON: page_live. 정의는 Supabase 마이그레이션
 -- page_live_add_closed_rounds_and_buy_context 참조.
