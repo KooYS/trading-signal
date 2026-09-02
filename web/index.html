@@ -99,8 +99,8 @@ h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .gap.up{color:var(--buy)} .gap.down{color:var(--sell)}
 .tags{display:flex;flex-wrap:wrap;gap:5px;padding:10px 14px 11px}
 .tag{font-size:10.5px;font-weight:500;padding:2px 7px;border-radius:2px;letter-spacing:.01em}
-.tag.ok{color:var(--ink-2);background:var(--sunk);border:1px solid var(--line)}
-.tag.bad{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-bg)}
+.tag.ok{color:var(--buy);background:var(--buy-bg);border:1px solid var(--buy-bg);font-weight:600}
+.tag.bad{color:var(--sell);background:var(--sell-bg);border:1px solid var(--sell-bg);font-weight:600}
 .tag.na{color:var(--muted);background:transparent;border:1px dashed var(--line)}
 .tag.flow{color:var(--news);background:var(--news-bg);border:1px solid var(--news-bg)}
 /* 검증에서 무효로 나온 것들. 검증된 배지(ok/bad)와 섞이지 않게 눌러둔다 */
@@ -124,15 +124,17 @@ h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .track{height:4px;background:var(--sunk);border-radius:2px;overflow:hidden}
 .fill{height:100%;background:var(--bar);border-radius:2px}
 .axis .v{text-align:right;color:var(--ink-2);font-weight:500}
-.fill.hot{background:var(--buy)}
-.score-n.hot{color:var(--buy)} .score-n.cool{color:var(--sell)}
+.fill.hot{background:var(--sell)}            /* 많이 오른 축 = 경고 = 파랑 */
+.score-n.good{color:var(--buy)}              /* 과열도 낮음 = 좋다 = 빨강 */
+.score-n.bad{color:var(--sell)}              /* 과열도 높음 = 나쁘다 = 파랑 */
+.score-h.good{color:var(--buy)} .score-h.bad{color:var(--sell)}
 .axis.na .fill{background:var(--line)}
 .axis.na .v{color:var(--muted)}
 
 .facts{display:grid;grid-template-columns:auto 1fr;gap:3px 9px;font-size:12px}
 .facts dt{color:var(--muted);font-weight:300}
 .facts dd{margin:0;text-align:right;font-weight:500}
-.facts dd.neg{color:var(--buy)}
+.facts dd.neg{color:var(--sell)}   /* 적자는 나쁨 = 파랑. 음수를 파랑으로 쓰는 관행과도 맞다 */
 .ind{font-size:11px;color:var(--muted);font-weight:300;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
 
 .news-h{display:flex;align-items:center;gap:6px;padding:9px 14px 7px;flex:none;
@@ -374,12 +376,15 @@ function buyCard(c, rank) {
   const body = el("div", "body");
   const L = el("div", "pane-l");
 
+  /* 색만으로는 방향을 못 읽는다. 판정을 말로도 적는다.
+     빨강=좋다 / 파랑=나쁘다 — 실현수익률(+빨강 -파랑)과 같은 방향이다 */
   const sr = el("div", "score-row");
   const h = c.heat;
-  sr.append(el("span", "score-n mono" + (h == null ? "" : h >= 70 ? " hot" : h <= 30 ? " cool" : ""),
-                h == null ? "—" : h));
+  const kind = h == null ? "" : h >= 70 ? "bad" : h <= 30 ? "good" : "";
+  const word = h == null ? "지표 없음" : h >= 70 ? "과열" : h <= 30 ? "양호" : "보통";
+  sr.append(el("span", "score-n mono " + kind, h == null ? "—" : h));
   sr.append(el("span", "score-l", "과열도"));
-  sr.append(el("span", "score-h", "낮을수록 좋음"));
+  sr.append(el("span", "score-h " + kind, word));
   L.append(sr);
 
   const now = el("div", "nowbox");
@@ -403,7 +408,7 @@ function buyCard(c, rank) {
     const row = el("div", "axis" + (raw == null ? " na" : ""));
     row.append(el("span", null, label));
     const t = el("div", "track");
-    const f = el("div", "fill" + (w != null && w >= 70 ? " hot" : ""));
+    const f = el("div", "fill" + (w != null && w >= 70 ? " hot" : ""));   // 70%↑ = 파랑 경고
     f.style.width = (w == null ? 50 : w) + "%";
     t.append(f); row.append(t);
     row.append(el("span", "v mono", raw == null ? "—" : fmt(raw)));
@@ -635,7 +640,8 @@ function render() {
     grid.hidden = false; table.hidden = true;
     grid.replaceChildren(...pick(BUYS).map((c, i) => buyCard(c, i + 1)));
     lede.append(document.createTextNode(
-      " 과열도는 절대 기준이 아니라 그날 후보들 사이의 상대 순위(0~100)다. 회색 배지는 검증에서 무효로 나온 정보성 항목이다."
+      " 과열도는 절대 기준이 아니라 그날 후보들 사이의 상대 순위(0~100)다."
+      + " 색은 양봉·음봉과 같은 방향이다 — 빨강이 좋고 파랑이 나쁘다. 회색 배지는 검증에서 무효로 나온 정보성 항목이다."
       + (FLOW_ASOF ? ` 수급은 ${FLOW_ASOF} 기준이고 당일치는 20시경 확정된다.` : "")
       + " ★ 를 눌러두면 진행중·청산까지 따라다니고, 팔리면 맨 위에 알림이 뜬다."));
     cnt.textContent = `${n}건 · 과열도 낮은 순`;
