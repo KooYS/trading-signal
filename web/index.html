@@ -166,8 +166,10 @@ td.r,th.r{text-align:right}
 .scroller{overflow-x:auto}
 
 /* 용어 설명. 물음표는 작고 흐리게 — 있는 줄은 알되 읽는 걸 방해하지 않게 */
-.q{font:inherit;font-size:9.5px;line-height:1;vertical-align:super;margin-left:2px;
-  padding:1px 3px;border:0;background:none;color:var(--muted);opacity:.45;cursor:help}
+.q{font:inherit;font-size:.8em;line-height:1;display:inline-flex;align-items:center;
+  justify-content:center;width:1.35em;height:1.35em;padding:0;margin-left:3px;
+  vertical-align:.11em;border:1px solid currentColor;border-radius:50%;
+  background:none;color:var(--muted);opacity:.5;cursor:help}
 .q:hover,.q[aria-expanded="true"]{opacity:1;color:var(--ink-2)}
 .q:focus-visible{outline:2px solid var(--ink);outline-offset:1px;opacity:1}
 #tip{position:fixed;z-index:50;max-width:320px;padding:10px 12px;border-radius:4px;
