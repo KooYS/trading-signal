@@ -164,6 +164,20 @@ td.r,th.r{text-align:right}
 .up{color:var(--buy)} .down{color:var(--sell)}
 .age{color:var(--muted);font-size:12px}
 .scroller{overflow-x:auto}
+
+/* 용어 설명. 물음표는 작고 흐리게 — 있는 줄은 알되 읽는 걸 방해하지 않게 */
+.q{font:inherit;font-size:9.5px;line-height:1;vertical-align:super;margin-left:2px;
+  padding:1px 3px;border:0;background:none;color:var(--muted);opacity:.45;cursor:help}
+.q:hover,.q[aria-expanded="true"]{opacity:1;color:var(--ink-2)}
+.q:focus-visible{outline:2px solid var(--ink);outline-offset:1px;opacity:1}
+#tip{position:fixed;z-index:50;max-width:320px;padding:10px 12px;border-radius:4px;
+  background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);
+  font-size:12px;line-height:1.65;color:var(--ink-2);white-space:pre-wrap;font-weight:300}
+#tip b{display:block;margin-bottom:4px;color:var(--ink);font-weight:600;font-size:12.5px}
+#tip .verdict{display:inline-block;margin-top:6px;font-size:11px;padding:1px 6px;border-radius:2px}
+#tip .verdict.ok{color:var(--buy);background:var(--buy-bg)}
+#tip .verdict.no{color:var(--muted);background:var(--sunk)}
+@media (max-width:680px){ #tip{max-width:calc(100vw - 28px)} }
 .scroller > .empty{background:var(--surface);border:1px solid var(--line);border-radius:4px}
 
 /* 관심 종목 별. 카드·표 어디서든 같은 모양 */
@@ -264,6 +278,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);font-si
   </div>
 </div>
 
+<div id="tip" role="tooltip" hidden></div>
+
 <main class="wrap">
   <div id="alert"></div>
   <p class="lede" id="lede"></p>
@@ -298,6 +314,120 @@ const qty = v => {
   if (a >= 1e4) return sign + (a / 1e4).toFixed(a >= 1e5 ? 0 : 1) + "만주";
   return sign + a.toLocaleString() + "주";
 };
+
+/* ── 용어 사전 ───────────────────────────────────────────────
+   [제목, 설명, 판정]. 판정은 검증 결과다 — 화면에 숫자를 띄워놓고
+   "이게 맞는 건지 아닌지"를 안 알려주면 정보성 항목을 근거로 착각한다.
+   근거는 docs/backtest.md.                                        */
+const GLOSS = {
+  heat: ["과열도",
+    "그날 매수 후보들 사이의 상대 순위(0~100). 20일 밴드위치·20일선 이격·매물대 대비 "
+    + "세 가지를 백분위로 눕혀 평균낸 값이다. 낮을수록 아직 덜 오른 상태.\n\n"
+    + "절대 기준이 아니라 그날 후보끼리의 순위다. 후보가 적은 날은 의미가 약하다.",
+    ["검증됨 — 728일 일내 검정에서 유일하게 살아남은 결과 (t −1.8~−2.5)", "ok"]],
+  pos: ["20일 밴드위치",
+    "최근 20거래일의 최저~최고 구간에서 지금 주가가 어디쯤인가. 0%면 20일 최저, 100%면 최고.",
+    ["과열도 3요소 중 가장 강했다 (t −2.46)", "ok"]],
+  ma20: ["20일선 이격",
+    "20일 이동평균선 대비 현재가가 몇 % 위에 있나. 양수면 평균보다 비싸게 사는 것이다.",
+    ["과열도 3요소 (t −1.99)", "ok"]],
+  vwap: ["매물대 대비",
+    "최근 60일 거래량가중평균가 대비 현재가. 양수면 그동안 산 사람 대부분이 이익 구간이라 "
+    + "차익 매물이 나올 수 있다는 뜻이다.",
+    ["과열도 3요소 (t −1.80)", "ok"]],
+  cool: ["눌림 하위",
+    "과열도가 30 이하다. 그날 후보 중 덜 오른 축이라는 뜻.",
+    ["검증된 가점", "ok"]],
+  hot: ["과열 상위",
+    "과열도가 70 이상이다. 그날 후보 중 이미 많이 오른 축이라 감점 대상이다.",
+    ["검증된 감점", "ok"]],
+  ir: ["IR 공시",
+    "신호 직전 7일 안에 기업설명회(IR) 공시가 있었다. 회사가 지금 주주와 소통하려 한다는 신호다.",
+    ["검증됨 — 시장 대비 +3.11%p, 2019~2026 8년 내내 양수 (t 2.89, n 157)", "ok"]],
+  cap:  ["시총", "시가총액. 주가 × 상장주식수.", ["검증에서 무효 — 참고용", "no"]],
+  pbr:  ["PBR", "주가순자산비율. 1보다 낮으면 장부상 순자산보다 싸게 거래된다는 뜻이다.",
+    ["검증에서 무효 — 국면 따라 부호가 뒤집힌다. 참고용", "no"]],
+  roe:  ["ROE", "자기자본이익률. 자기 돈으로 한 해에 몇 %를 벌었나. 음수면 적자다.",
+    ["검증에서 무효 — 참고용", "no"]],
+  p52:  ["52주 위치", "최근 1년 최저~최고 구간에서 지금 주가가 어디쯤인가.", ["참고용", "no"]],
+  frate:["외국인 보유", "외국인이 들고 있는 지분 비율.", ["참고용", "no"]],
+  loss: ["적자", "ROE 또는 PER 이 음수다.", ["검증에서 무효 — 참고용", "no"]],
+  flow: ["수급 연속 순매수",
+    "외국인 또는 기관이 며칠 연속 순매수했나. 일수만 보면 하루 몇 주짜리도 잡히니 수량을 함께 본다.",
+    ["검증에서 무효 — 4,172 라운드에서 어떤 조합도 무필터를 못 넘었다", "no"]],
+  vol:  ["거래량 배수", "직전 거래일 거래량이 최근 20일 평균의 몇 배인가.",
+    ["오히려 해로움 — 거래량 상위를 사면 그날 평균보다 −0.78%p", "no"]],
+  disc: ["공시", "신호 직전 7일 안에 있었던 주요 공시.",
+    ["공급계약은 306건에서 +0.22%p 로 무효. 희석(CB·전환)·최대주주변경은 마이너스", "no"]],
+  gap:  ["진입 늦음", "신호가 대비 현재가가 3% 넘게 올랐다. 신호 시점보다 비싸게 사게 된다.", ["참고용", "no"]],
+  news: ["신호 전 뉴스", "신호가 나기 전 7일 안에 나온 기사.",
+    ["검증에서 무효 — 급등하면 기사가 늘어나는 후행 지표다", "no"]],
+};
+
+let tipFor = null, tipMode = null;   // hover 로 연 것을 click 이 토글로 닫으면 안 된다
+function showTip(btn) {
+  const g = GLOSS[btn.dataset.k];
+  const tip = document.getElementById("tip");
+  if (!g) return;
+  tip.replaceChildren();
+  tip.append(el("b", null, g[0]));
+  tip.append(document.createTextNode(g[1]));
+  if (g[2]) tip.append(el("span", "verdict " + g[2][1], g[2][0]));
+  tip.hidden = false;
+  btn.setAttribute("aria-expanded", "true");
+  tipFor = btn;
+  placeTip();
+}
+function placeTip() {
+  if (!tipFor) return;
+  const tip = document.getElementById("tip");
+  const r = tipFor.getBoundingClientRect(), t = tip.getBoundingClientRect();
+  // 화면 밖으로 나가지 않게 가둔다. 아래 자리가 부족하면 위로 띄운다
+  tip.style.left = Math.max(8, Math.min(r.left - 8, innerWidth - t.width - 8)) + "px";
+  tip.style.top = (r.bottom + 6 + t.height > innerHeight ? r.top - t.height - 6 : r.bottom + 6) + "px";
+}
+function hideTip() {
+  document.getElementById("tip").hidden = true;
+  if (tipFor) tipFor.setAttribute("aria-expanded", "false");
+  tipFor = null; tipMode = null;
+}
+/* 물음표 하나. 데스크톱은 올리면, 모바일은 눌러야 뜬다 */
+function q(key) {
+  const b = el("button", "q", "?");
+  b.type = "button"; b.dataset.k = key;
+  b.setAttribute("aria-label", (GLOSS[key] || [key])[0] + " 설명");
+  b.setAttribute("aria-expanded", "false");
+  return b;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest(".q");
+  if (!b) return hideTip();
+  e.stopPropagation();
+  // 터치와 호버를 다 지원하는 기기(터치 노트북 등)에서는 탭 한 번에
+  // mouseover 로 열리고 click 이 곧바로 닫아버린다. 그래서 호버로 열린 건 닫지 않는다.
+  if (b === tipFor && tipMode === "click") return hideTip();
+  showTip(b); tipMode = "click";
+});
+if (matchMedia("(hover:hover)").matches) {
+  document.addEventListener("mouseover", e => {
+    const b = e.target.closest(".q");
+    if (b && b !== tipFor) { showTip(b); tipMode = "hover"; }
+  });
+  document.addEventListener("mouseout", e => {
+    if (tipMode === "hover" && e.target.closest(".q")
+        && !e.relatedTarget?.closest("#tip")) hideTip();
+  });
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") hideTip(); });
+/* 스크롤에 닫지 않고 따라 움직인다. 버튼을 누르면 브라우저가 포커스를 주며
+   스크롤을 일으키는데, 거기서 닫아버리면 모바일에서 툴팁이 열리자마자 사라진다. */
+addEventListener("scroll", () => {
+  if (!tipFor) return;
+  const r = tipFor.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > innerHeight) return hideTip();   // 기준점이 화면 밖이면 닫는다
+  placeTip();
+}, true);
+addEventListener("resize", hideTip);
 
 /* ── 관심 종목 ───────────────────────────────────────────────
    이 브라우저의 localStorage 에만 있다. 서버에 사용자 개념이 없어서
@@ -370,7 +500,11 @@ function buyCard(c, rank) {
   wrap.append(head);
 
   const tags = el("div", "tags");
-  for (const [t, kind] of badges(c)) tags.append(el("span", "tag " + kind, t));
+  for (const [t, kind, key] of badges(c)) {
+    const sp = el("span", "tag " + kind, t);
+    if (key) sp.append(q(key));
+    tags.append(sp);
+  }
   wrap.append(tags);
 
   const body = el("div", "body");
@@ -383,7 +517,9 @@ function buyCard(c, rank) {
   const kind = h == null ? "" : h >= 70 ? "bad" : h <= 30 ? "good" : "";
   const word = h == null ? "지표 없음" : h >= 70 ? "과열" : h <= 30 ? "양호" : "보통";
   sr.append(el("span", "score-n mono " + kind, h == null ? "—" : h));
-  sr.append(el("span", "score-l", "과열도"));
+  const lab = el("span", "score-l", "과열도");
+  lab.append(q("heat"));
+  sr.append(lab);
   sr.append(el("span", "score-h " + kind, word));
   L.append(sr);
 
@@ -406,7 +542,9 @@ function buyCard(c, rank) {
   for (const [k, label, toPct, fmt] of HEAT_PARTS) {
     const raw = c.hp ? c.hp[k] : null, w = toPct(raw);
     const row = el("div", "axis" + (raw == null ? " na" : ""));
-    row.append(el("span", null, label));
+    const lb = el("span", null, label);
+    lb.append(q(k === "pos" ? "pos" : k === "ma20" ? "ma20" : "vwap"));
+    row.append(lb);
     const t = el("div", "track");
     const f = el("div", "fill" + (w != null && w >= 70 ? " hot" : ""));   // 70%↑ = 파랑 경고
     f.style.width = (w == null ? 50 : w) + "%";
@@ -418,14 +556,16 @@ function buyCard(c, rank) {
 
   const dl = el("dl", "facts");
   const facts = [
-    ["시총", eok(c.cap), false],
-    ["PBR", c.pbr == null ? "—" : Number(c.pbr).toFixed(1), false],
-    ["ROE", c.roe == null ? "—" : Number(c.roe).toFixed(1) + "%", c.roe < 0],
-    ["52주 위치", c.p52 == null ? "—" : c.p52 + "%", false],
-    ["외국인 보유", c.frate == null ? "—" : Number(c.frate).toFixed(1) + "%", false],
+    ["시총", eok(c.cap), false, "cap"],
+    ["PBR", c.pbr == null ? "—" : Number(c.pbr).toFixed(1), false, "pbr"],
+    ["ROE", c.roe == null ? "—" : Number(c.roe).toFixed(1) + "%", c.roe < 0, "roe"],
+    ["52주 위치", c.p52 == null ? "—" : c.p52 + "%", false, "p52"],
+    ["외국인 보유", c.frate == null ? "—" : Number(c.frate).toFixed(1) + "%", false, "frate"],
   ];
-  for (const [k, v, neg] of facts) {
-    dl.append(el("dt", null, k));
+  for (const [k, v, neg, key] of facts) {
+    const dt = el("dt", null, k);
+    dt.append(q(key));
+    dl.append(dt);
     dl.append(el("dd", "mono" + (neg ? " neg" : ""), v));
   }
   L.append(dl);
@@ -436,6 +576,7 @@ function buyCard(c, rank) {
   const nh = el("div", "news-h");
   if (pre.length) nh.append(el("span", "dot"));
   nh.append(el("span", null, pre.length ? `신호 전 뉴스 ${pre.length}건` : "신호 전 뉴스 없음"));
+  nh.append(q("news"));
   R.append(nh);
   const list = el("div", "news-list");
   if (!c.news.length) list.append(el("p", "empty", "최근 7일 내 관련 기사가 없다. 근거를 알 수 없는 신호."));
@@ -603,19 +744,20 @@ function syncCounts() {
 /* 배지는 두 종류다.
    ok/bad = 6,369 라운드에서 검증된 것. 그 외는 전부 info — 무효로 확인됐지만
    판단에 참고가 되니 남긴다. 색으로 구분해서 검증된 것처럼 보이지 않게 한다. */
+/* [문구, 색, 용어키]. 색은 ok/bad 만 검증된 것이고 info 는 참고용이다 */
 function badges(c) {
   const out = [];
-  if (c.ir) out.push(["IR 공시 " + String(c.ir).slice(5), "ok"]);       // +3.11%p, 8년 연속
-  if (c.heat != null && c.heat >= 70) out.push(["과열 상위 " + c.heat, "bad"]);
-  if (c.heat != null && c.heat <= 30) out.push(["눌림 하위 " + c.heat, "ok"]);
-  for (const d of (c.disc || []).slice(0, 2))                            // 정보
-    out.push([String(d.t).replace(/^\[[^\]]*\]/, "").trim().slice(0, 18), "info"]);
-  if (c.fgn >= 3) out.push(["외국인 " + c.fgn + "일 " + qty(c.fgn5), "info"]);
-  if (c.ins >= 3) out.push(["기관 " + c.ins + "일 " + qty(c.ins5), "info"]);
-  if (c.vol != null && c.vol >= 2) out.push(["거래량 " + Number(c.vol).toFixed(1) + "배", "info"]);
-  if (c.loss) out.push(["적자", "info"]);
-  if (c.pbr != null && c.pbr < 1) out.push(["PBR " + Number(c.pbr).toFixed(1), "info"]);
-  if (c.gap != null && c.gap > 3) out.push(["진입 늦음 " + pct(c.gap), "info"]);
+  if (c.ir) out.push(["IR 공시 " + String(c.ir).slice(5), "ok", "ir"]);
+  if (c.heat != null && c.heat >= 70) out.push(["과열 상위 " + c.heat, "bad", "hot"]);
+  if (c.heat != null && c.heat <= 30) out.push(["눌림 하위 " + c.heat, "ok", "cool"]);
+  for (const d of (c.disc || []).slice(0, 2))
+    out.push([String(d.t).replace(/^\[[^\]]*\]/, "").trim().slice(0, 18), "info", "disc"]);
+  if (c.fgn >= 3) out.push(["외국인 " + c.fgn + "일 " + qty(c.fgn5), "info", "flow"]);
+  if (c.ins >= 3) out.push(["기관 " + c.ins + "일 " + qty(c.ins5), "info", "flow"]);
+  if (c.vol != null && c.vol >= 2) out.push(["거래량 " + Number(c.vol).toFixed(1) + "배", "info", "vol"]);
+  if (c.loss) out.push(["적자", "info", "loss"]);
+  if (c.pbr != null && c.pbr < 1) out.push(["PBR " + Number(c.pbr).toFixed(1), "info", "pbr"]);
+  if (c.gap != null && c.gap > 3) out.push(["진입 늦음 " + pct(c.gap), "info", "gap"]);
   if (c.heat == null) out.push(["지표 없음", "na"]);
   return out;
 }
