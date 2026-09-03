@@ -277,3 +277,7 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 -- 수급 국면. '기관만 매도'가 유일한 후보 (+1.56%p t2.37).
 --   flow_regime (matview)  f_sell, i_sell, regime
 -- 둘 다 daily_tech_refresh() 에서 concurrently 갱신한다.
+
+-- 수급 이력이 얕은 종목(최근 1년 200거래일 미만). 일일 backfill 이 이 목록을
+-- 40개씩 메운다. flow 수집 창이 120일이라 신규 편입 종목은 밴드가 짧게 그려진다.
+--   shallow_flow (view)  stock_code, days

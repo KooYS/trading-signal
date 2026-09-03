@@ -8,6 +8,7 @@
   fund [code…]               오늘 신호 종목의 펀더멘탈 (토스증권). 하루 1행 스냅샷.
   flow [code…]               개인·외국인·기관 순매매 120일치 (토스증권).
   flow_backfill [N] [code…]  수급을 N페이지까지 소급. 1페이지 ≈ 120거래일.
+      (인자 없이 backfill 을 돌리면 이력 얕은 종목을 자동으로 채운다)
   price [code…]              일별 시세 1페이지(약 15개월). 토스 c-chart.
   price_backfill [N] [code…] 일별 시세를 N페이지까지 소급. 1페이지 ≈ 300거래일.
   fin [code…]                분기 매출·순이익·영업이익 5년치 (토스증권).
@@ -199,6 +200,23 @@ class _NotIn:
 
     def __contains__(self, code):
         return code not in self.have
+
+
+def deepen_flow(limit=40):
+    """수급 이력이 얕은 종목을 채운다.
+
+    flow 수집 창이 120일이라 신규 편입 종목은 매집 밴드(accum_band)가 60~120일치로
+    그려진다. 실제로 카카오가 60일치로 '1년 분포'처럼 보이고 있었다.
+    평소엔 대상이 0건이고 신규분만 몇 개 걸리므로 매일 돌려도 싸다."""
+    try:
+        codes = [r["stock_code"] for r in
+                 sb_get(f"shallow_flow?select=stock_code&limit={limit}")]
+    except Exception as e:
+        print(f"shallow_flow skipped: {e}", file=sys.stderr)
+        return {"codes": 0, "upserted": 0}
+    if not codes:
+        return {"codes": 0, "upserted": 0}
+    return {"codes": len(codes), "upserted": flow(codes, pages=3)}
 
 
 def backfill(codes):
@@ -715,7 +733,10 @@ def lambda_handler(event, _context):
                     "upserted": flow(codes, pages=int(ev.get("pages", 25)))}
         fn = {"backfill": backfill, "flow": flow, "fund": fund, "fin": fin}.get(cmd)
         if fn:
-            return {"cmd": cmd, "codes": len(codes), "upserted": fn(codes)}
+            out = {"cmd": cmd, "codes": len(codes), "upserted": fn(codes)}
+            if cmd == "backfill":          # 하루 한 번 수급 이력도 함께 메운다
+                out["deepen"] = deepen_flow()
+            return out
         pages = int(ev.get("pages", 20)) if cmd == "price_backfill" else 1
         return {"cmd": cmd, "codes": len(codes), "upserted": price(codes, pages=pages)}
     if cmd == "dart_corp":
