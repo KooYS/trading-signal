@@ -182,12 +182,14 @@ button.tag.term{text-decoration:none}
 .band-lg.two .lg-sell{text-align:right;padding-right:6px;color:var(--sell);grid-column:2}
 .band-lg.two .lg-buy{color:var(--buy);grid-column:3}
 .band-lg.two .lg-c{text-align:center;color:var(--muted)}
-/* 순포지션: 가운데 축. 양수는 오른쪽(빨강), 음수는 왼쪽(파랑)으로 자란다 */
-.btrack.mid{position:relative;border-right:0}
-.btrack.mid::before{content:"";position:absolute;left:50%;top:0;bottom:0;border-left:1px solid var(--line)}
-.btrack.mid .bfill{position:absolute;top:0;bottom:0}
-.btrack.mid .bfill.buy{left:50%}
-.btrack.mid .bfill.sell{right:50%}
+.band.hold .brow{grid-template-columns:64px 1fr 34px 1fr 34px;gap:0 4px}
+.band.hold .band-lg{grid-template-columns:64px 1fr 34px 1fr 34px}
+.band.hold .lg-c:first-of-type{grid-column:2/4} .band.hold .lg-c:last-of-type{grid-column:4/6}
+.bfill.hold{background:var(--news)}
+.bfill.none{display:none}
+.brow.edge .blabel{color:var(--ink-2);font-weight:500}
+.band.hold .band-note{margin:0 0 6px}
+
 
 .facts{display:grid;grid-template-columns:auto 1fr;gap:3px 9px;font-size:12px}
 .facts dt{color:var(--muted);font-weight:300}
@@ -403,12 +405,18 @@ const GLOSS = {
     + "하루 순매수·순매도량을 그날 저가~고가에 균등 분산시켜 매물대와 같은 2.5% 격자에 배분했다.\n\n"
     + "양쪽을 다 그리는 이유: 1년 합계로 보면 대부분 산 만큼 팔았고 순매도인 종목이 절반이다. "
     + "산 자리만 그리면 '매집' 으로 읽히지만 실제로는 '한때 산 자리' 다. 머리의 순합계가 진짜 방향이다.\n\n"
-    + "순포지션(산 것 − 판 것)은 '그 가격대에 산 게 남아 있다' 의 근사다. 6,291 에서 판 게 4,915 에서 "
-    + "산 걸 판 건지 6,291 에서 산 걸 판 건지는 데이터로 알 수 없다. 그래도 '어느 가격대에 얼마나 들고 있나' 에 "
-    + "가장 가까운 그림이라 외인·기관 따로 그린다.\n\n"
+
     + "한계: flow 는 하루 순액이라 같은 날 사고판 건 상쇄되고, 하루 중 어느 가격에 체결됐는지도 모른다. "
     + "칸 경계를 정밀하게 읽으면 안 된다.",
     ["참고용 — 네 방식(평단 대비·지지비중·물린비중·절대두께)으로 검정했으나 모두 t<2 또는 단조성 없음", "na"]],
+  hold: ["남은 물량 · 1년 내 매수분",
+    "외국인·기관이 지금 들고 있는 물량이 어느 가격대에 얼마나 있나 — '어디에 물려 있고 어디에 들고 있나'.\n\n"
+    + "계산: 최근 1년 안에 순매수한 날의 물량을 그날 저가~고가 칸에 로트로 쌓고, 순매도한 날엔 그때 들고 있던 "
+    + "로트 전체를 같은 비율로 깎는다(평균단가 모델). 어느 로트를 팔았는지는 데이터로 알 수 없어서 이 가정이 "
+    + "들어간다. 칸의 숫자는 남은 것 중 몇 % 다. '↑' 행은 창 위(+34% 이상)에서 산 게 남은 것 — 물린 물량이다.\n\n"
+    + "한계: 1년 창 안의 매수분만 본다. 그 이전부터 들고 있던 물량은 단가를 모르고, 창 안 매수분보다 많이 팔면 "
+    + "그 초과분은 이전 보유분을 판 것으로 친다. 머리의 '산 것의 x%' 가 작을수록 1년 내 산 걸 거의 다 넘긴 것이다.",
+    ["참고용 — 검정하지 않았다. 판단 재료로만 쓴다", "na"]],
   regime: ["수급 국면",
     "외국인·기관 중 한쪽만 3일 이상 연속 순매도인 상태.\n\n"
     + "'기관만 매도'는 외국인이 받아내는 그림이라 신호 457건에서 초과수익 +1.56%p(t 2.37), "
@@ -751,38 +759,54 @@ function bandChart(c) {
   return wrap;
 }
 
-/* 순포지션 = 가격대별 산 것 − 판 것. "그 값에 산 게 남아 있다" 의 근사다 —
-   6,291 에서 판 게 4,915 에서 산 걸 판 건지 6,291 에서 산 걸 판 건지는 모른다.
-   그래도 '어느 가격대에 얼마나 들고 있나' 에 가장 가까운 그림이라 외인·기관 따로 그린다. */
-function netChart(c) {
-  if (!c.band || !c.band.length || c.px == null) return el("div");
-  const wrap = el("div", "band big two net");
+/* 남은 물량의 가격대 구성. "외국인은 어디에 물려 있고 어디에 들고 있나".
+   1년 창 안에서 산 로트를 가격대에 쌓고, 판 날엔 들고 있던 로트 전체를 같은 비율로 깎은
+   결과다(hold_band). 칸마다 '남은 것 중 몇 %' 로 적는다 — 수량은 총합에만. */
+function holdChart(c) {
+  if (!c.hold || !c.hold.length || c.px == null) return el("div");
+  const t = c.bandTot || {};
+  const rows = new Map(c.hold.map(([k, f, i]) => [k, [f, i]]));
+  const totF = c.hold.reduce((a, z) => a + z[1], 0), totI = c.hold.reduce((a, z) => a + z[2], 0);
+  const wrap = el("div", "band big two hold");
   const h = el("div", "band-h");
-  h.append(term("순포지션 · 산 것 − 판 것", "band"));
+  h.append(term("남은 물량 · 1년 내 매수분", "hold"));
   wrap.append(h);
+  /* 머리: 얼마나 남았나. 산 것 대비 비율이 '이미 다 넘겼는지' 를 말해준다 */
+  const sub = el("div", "band-note");
+  const line = (who, tot, bought) => tot > 0
+    ? `${who} ${qty(tot).replace(/^[-+]/, "")} 남음 (산 것의 ${Math.round(100 * tot / bought)}%)`
+    : `${who} 1년 내 산 것 전량 매도`;
+  sub.append(document.createTextNode(line("외인", totF, t.bf || 1) + " · " + line("기관", totI, t.bi || 1)));
+  wrap.append(sub);
   const lg = el("div", "band-lg two");
   lg.append(el("span", "lg-c", "외인"));
   lg.append(el("span", "lg-c", "기관"));
   wrap.append(lg);
-  const rows = new Map(c.band.map(([k, bf, bi, sf, si]) => [k, [bf - sf, bi - si]]));
-  const max = Math.max(...[...rows.values()].flat().map(Math.abs));
-  const bar = v => {
-    const t = el("div", "btrack mid");
-    const f = el("div", "bfill " + (v > 0 ? "buy" : "sell"));
-    f.style.width = (max ? Math.abs(v) / max * 50 : 0) + "%";
-    f.title = (v >= 0 ? "남은 매수 " : "순매도 ") + qty(v);
-    t.append(f);
-    return t;
+  const pct = (v, tot) => tot > 0 ? 100 * v / tot : 0;
+  const maxPct = Math.max(...[...rows].map(([, [f, i]]) => Math.max(pct(f, totF), pct(i, totI))), 1);
+  const cell = (v, tot) => {
+    const p = pct(v, tot);
+    const tr = el("div", "btrack");
+    const f = el("div", "bfill " + (p ? "hold" : "none"));
+    f.style.width = (p / maxPct * 100) + "%";
+    tr.append(f);
+    const n = el("span", "bpct mono", p >= 0.5 ? Math.round(p) + "%" : "");
+    return [tr, n];
   };
+  /* 창 위(+34%↑)에 남은 것이 '물린 물량' 이다. 맨 위에 따로 적는다 */
+  const mk = (label, k, cls) => {
+    const [f = 0, i = 0] = rows.get(k) || [];
+    const row = el("div", "brow" + (cls ? " " + cls : ""));
+    row.append(el("span", "blabel mono", label));
+    for (const x of [...cell(f, totF), ...cell(i, totI)]) row.append(x);
+    return row;
+  };
+  wrap.append(mk(won(Math.round(kHi(c.px, 11))) + "↑", 12, "edge"));
   for (let k = 11; k >= -12; k--) {
     const lo = kLo(c.px, k), hi = kHi(c.px, k);
-    const [nf = 0, ni = 0] = rows.get(k) || [];
-    const row = el("div", "brow" + (c.now != null && c.now >= lo && c.now < hi ? " here" : ""));
-    row.append(el("span", "blabel mono", won(Math.round(lo))));
-    row.append(bar(nf));
-    row.append(bar(ni));
-    wrap.append(row);
+    wrap.append(mk(won(Math.round(lo)), k, c.now != null && c.now >= lo && c.now < hi ? "here" : ""));
   }
+  wrap.append(mk(won(Math.round(kLo(c.px, -12))) + "↓", -13, "edge"));
   return wrap;
 }
 
@@ -851,7 +875,7 @@ function openDetail(c) {
   /* 가운데 — 매집 분포 */
   const b2 = el("div", "mcol");
   b2.append(vpChart(c));
-  if (c.band && c.band.length) { b2.append(bandChart(c)); b2.append(netChart(c)); }
+  if (c.band && c.band.length) { b2.append(bandChart(c)); b2.append(holdChart(c)); }
   else b2.append(el("p", "empty", "수급 이력이 없어 매집 분포를 못 그린다."));
   grid.append(b2);
 

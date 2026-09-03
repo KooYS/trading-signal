@@ -275,6 +275,12 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 -- 현재가 기준 2.5% 격자(k=-12..11)에 배분. 산 것·판 것을 따로 둔다 — 대부분 산 만큼 팔았다.
 -- ⚠️ 점수 아님 — 네 방식 전부 t<2 또는 단조성 없음(docs/backtest.md §3).
 --   accum_band  (matview)  bucket(k), price_lo/hi, buy_f/buy_i/sell_f/sell_i, tot_* (1년 합계)
+-- 남은 물량의 가격대 구성 — "외국인이 어디에 물려 있고 어디에 들고 있나".
+-- 1년 창 안의 순매수를 그날 저가~고가 칸에 로트로 쌓고, 순매도한 날은 들고 있던 로트 전체를
+-- 같은 비율로 깎는다(평균단가 모델). 창 이전 보유분은 단가를 모른다. -13 = 창 아래, 12 = 창 위(물림).
+-- matview 가 아니라 테이블이다 — 날짜순 상태 추적이라 plpgsql 루프(hold_band_refresh)로 채운다.
+-- ⚠️ 생존계수를 numeric 으로 9만 번 곱하면 자릿수가 폭발해 타임아웃. float8 로 한다.
+--   hold_band  (table)  bucket(k), hold_f, hold_i   ← daily_tech_refresh 끝에서 갱신
 -- 수급 국면. '기관만 매도'가 유일한 후보 (+1.56%p t2.37).
 --   flow_regime (matview)  f_sell, i_sell, regime
 -- 둘 다 daily_tech_refresh() 에서 concurrently 갱신한다.
