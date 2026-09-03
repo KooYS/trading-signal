@@ -284,3 +284,7 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 --    판정하므로 신규 상장 종목(상장 이후 전부 있음)은 제외된다. 안 그러면
 --    매일 40개 슬롯을 이들이 차지하고 헛돈다.
 --   shallow_flow (view)  stock_code, days, available
+
+-- 청산 이력은 본 응답의 41%(71KB)인데 탭을 열 때만 쓴다. 별도 뷰로 뺐다.
+-- page_live 에는 배지용 closedCount 만 남긴다. /api/data?part=closed 로 받는다.
+--   page_closed (view)  최근 30일 라운드

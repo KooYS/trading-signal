@@ -112,6 +112,7 @@ Secrets 에 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` 가 필요하다
 
 `web/` 이 Vercel 프로젝트다. `web/api/data.js` 가 service_role 키를 서버에만 두고
 `page_live` 뷰를 프록시한다. 브라우저는 키를 못 본다.
+`?part=closed` 는 청산 이력(`page_closed`)만 돌려준다 — 본 응답의 41%라 탭 열 때만 받는다.
 
 매수 카드는 **과열도 낮은 순**이다. 4축 진입 점수(수익성·밸류·타이밍·규모)는
 6,369 라운드에서 무효로 확인돼 걷어냈다 — 국면 따라 부호가 뒤집힌다. 대신 728일

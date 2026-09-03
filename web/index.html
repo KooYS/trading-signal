@@ -920,7 +920,7 @@ const TABS = [
   ["buy",    "오늘 매수", () => pick(BUYS).length],
   ["open",   "진행중",    () => pick(OPEN).length],
   ["sell",   "오늘 매도", () => pick(SELLS).length],
-  ["closed", "청산",      () => pick(CLOSED).length],
+  ["closed", "청산",      () => CLOSED.length || D.closedCount || 0],
   ["all",    "전체",      () => pick(BUYS).length + pick(SELLS).length],
 ];
 const HINT = {
@@ -994,6 +994,26 @@ function badges(c) {
   return out;
 }
 
+/* 청산 이력은 본 응답의 41%(71KB)라 빼놨다. 탭을 처음 열 때 한 번만 받는다. */
+let closedState = "idle";        // idle | loading | done | fail
+async function loadClosed() {
+  if (closedState !== "idle") return;
+  closedState = "loading";
+  render();
+  try {
+    const k = new URLSearchParams(location.search).get("k");
+    const r = await fetch("/api/data?part=closed" + (k ? "&k=" + encodeURIComponent(k) : ""));
+    if (!r.ok) throw new Error(r.status);
+    CLOSED = await r.json();
+    closedState = "done";
+  } catch {
+    closedState = "fail";
+  }
+  const b = document.querySelector('.chip[data-f="closed"] .n');
+  if (b) b.textContent = String(CLOSED.length);
+  render();
+}
+
 let filter = "buy";
 function render() {
   const grid = document.getElementById("grid"), table = document.getElementById("table");
@@ -1004,7 +1024,10 @@ function render() {
   if (!n) {                                   // 빈 격자 대신 이유를 적는다
     grid.hidden = true; table.hidden = false;
     // 아직 못 받은 것과 진짜 0건은 다르다. 섞으면 "오늘 신호 없음"으로 오해한다
-    table.replaceChildren(el("p", "empty", !LOADED ? "불러오는 중…"
+    table.replaceChildren(el("p", "empty",
+      filter === "closed" && closedState === "loading" ? "청산 이력을 불러오는 중…"
+      : filter === "closed" && closedState === "fail" ? "청산 이력을 못 가져왔다."
+      : !LOADED ? "불러오는 중…"
       : favOnly ? "관심 종목 중에는 해당하는 게 없다. ★ 관심만 을 끄면 전체가 보인다."
       : EMPTY[filter]));
     cnt.textContent = LOADED ? "0건" : "";
@@ -1138,6 +1161,7 @@ document.getElementById("filters").addEventListener("click", e => {
     return;
   }
   filter = b.dataset.f;
+  if (filter === "closed") loadClosed();
   for (const c of document.querySelectorAll(".chip[data-f]"))
     c.setAttribute("aria-pressed", String(c === b));
   render();

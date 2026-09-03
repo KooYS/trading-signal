@@ -9,7 +9,9 @@ export default async function handler(req, res) {
   if (secret && req.query.k !== secret) {
     return res.status(401).json({ error: "unauthorized" });
   }
-  const url = `${process.env.SUPABASE_URL}/rest/v1/page_live?select=data`;
+  // 청산 이력은 전체의 41%(71KB)인데 탭을 열 때만 쓴다 → 별도 요청으로 뺐다
+  const view = req.query.part === "closed" ? "page_closed" : "page_live";
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${view}?select=data`;
   const key = process.env.SUPABASE_KEY;
   try {
     const r = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
