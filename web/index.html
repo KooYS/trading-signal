@@ -337,7 +337,11 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);font-si
 <script id="meta" type="application/json">{"rounds": 10674, "win": 64.8, "exp": 1.93, "win_avg": 10.83, "loss_avg": -14.44, "stocks": 189, "news": 4642, "buy_news": 22, "buy_loss": 15}</script>
 <script>
 /* 발행 시점 스냅샷. 라이브 연결이 되면 교체된다 */
-let D = JSON.parse(document.getElementById("data").textContent);
+/* 발행 시점 스냅샷. 라이브가 실패했을 때만 쓴다 —
+   먼저 그려버리면 이틀 지난 값이 잠깐 보였다가 갈아끼는 꼴이 된다. */
+const SNAP = JSON.parse(document.getElementById("data").textContent);
+let D = { date: null, buys: [], sells: [], open: [], closed: [] };
+let LOADED = false;
 let M = JSON.parse(document.getElementById("meta").textContent);
 let BUYS = D.buys, SELLS = D.sells, OPEN = D.open || [], CLOSED = D.closed || [];
 let FLOW_ASOF = (BUYS.find(b => b.fasof) || {}).fasof || null;
@@ -999,10 +1003,11 @@ function render() {
   const n = TABS.find(t => t[0] === filter)[2]();
   if (!n) {                                   // 빈 격자 대신 이유를 적는다
     grid.hidden = true; table.hidden = false;
-    table.replaceChildren(el("p", "empty", favOnly
-      ? "관심 종목 중에는 해당하는 게 없다. ★ 관심만 을 끄면 전체가 보인다."
+    // 아직 못 받은 것과 진짜 0건은 다르다. 섞으면 "오늘 신호 없음"으로 오해한다
+    table.replaceChildren(el("p", "empty", !LOADED ? "불러오는 중…"
+      : favOnly ? "관심 종목 중에는 해당하는 게 없다. ★ 관심만 을 끄면 전체가 보인다."
       : EMPTY[filter]));
-    cnt.textContent = "0건";
+    cnt.textContent = LOADED ? "0건" : "";
     return;
   }
 
@@ -1159,8 +1164,16 @@ function parseRows(payload) {
   try { return JSON.parse(m ? m[1] : payload); } catch { return null; }
 }
 
-function applyLive(d) {
+/* 라이브를 못 가져왔을 때만 스냅샷으로 떨어진다. 언제 것인지 밝힌다. */
+function fallbackSnapshot(why) {
+  if (LOADED) return;                       // 이미 최신이 떠 있으면 건드리지 않는다
+  applyLive(SNAP, true);
+  setStatus("warn", `${why} · ${SNAP.date || "발행 시점"} 스냅샷을 보는 중`);
+}
+
+function applyLive(d, isSnap) {
   if (!d || !Array.isArray(d.buys)) return false;
+  if (!isSnap) LOADED = true;
   D = d; BUYS = d.buys; SELLS = d.sells || []; OPEN = d.open || []; CLOSED = d.closed || [];
   FLOW_ASOF = (BUYS.find(b => b.fasof) || {}).fasof || null;
   DATA_DATE = d.date || null;
@@ -1189,9 +1202,9 @@ const LIVE_MSG = {
 async function connectVercel() {
   const k = new URLSearchParams(location.search).get("k");
   const r = await fetch("/api/data" + (k ? "?k=" + encodeURIComponent(k) : ""));
-  if (r.status === 401) { setStatus("warn", "접근이 거부됐다. 토큰이 설정된 배포다."); return true; }
-  if (!r.ok) { setStatus("warn", "데이터를 못 가져왔다. 스냅샷을 보는 중."); return true; }
-  if (!applyLive(await r.json())) { setStatus("warn", "데이터 형식을 읽지 못했다."); return true; }
+  if (r.status === 401) { fallbackSnapshot("접근 거부"); return true; }
+  if (!r.ok) { fallbackSnapshot("서버 오류 " + r.status); return true; }
+  if (!applyLive(await r.json())) { fallbackSnapshot("형식 오류"); return true; }
   setStatus("ok", (DATA_DATE || "") + " 기준 · 방금 갱신");
   return true;
 }
@@ -1204,7 +1217,7 @@ function connectArtifact(mcp) {
       if (ev.type === "data") {
         const rows = parseRows(ev.result?.payload);
         const d = Array.isArray(rows) ? rows[0]?.data : rows?.data;
-        if (!applyLive(d)) return setStatus("warn", "데이터 형식을 읽지 못했다. 스냅샷을 보는 중.");
+        if (!applyLive(d)) return fallbackSnapshot("형식 오류");
         const at = ev.result?.cache?.storedAt;
         setStatus("ok", (DATA_DATE || "") + " 기준 · " +
           (at ? new Date(at).toLocaleTimeString("ko-KR", {hour:"2-digit",minute:"2-digit"}) + " 캐시"
@@ -1212,7 +1225,7 @@ function connectArtifact(mcp) {
         return;
       }
       const c = ev.error?.code;
-      if (LIVE_MSG[c]) return setStatus("warn", LIVE_MSG[c]);   // 인증/연결 — 재시도 무의미
+      if (LIVE_MSG[c]) { fallbackSnapshot(LIVE_MSG[c]); return; }   // 인증/연결 — 재시도 무의미
       if (ev.error?.retryable && !retried) {                    // 일시 오류만 1회
         retried = true;
         setStatus("wait", "연결이 불안정하다. 다시 시도 중…");
@@ -1220,7 +1233,7 @@ function connectArtifact(mcp) {
                    1200 + Math.random() * 800);
         return;
       }
-      setStatus("warn", "최신 데이터를 못 가져왔다. 발행 시점 스냅샷을 보는 중.");
+      fallbackSnapshot("최신 데이터 실패");
     },
     { refetchInterval: 300000 });
 }
@@ -1231,8 +1244,8 @@ function connectArtifact(mcp) {
   if (mcp) return connectArtifact(mcp);
   try {
     if (await connectVercel()) return;
-  } catch { /* /api 가 없는 환경 — 스냅샷 유지 */ }
-  setStatus("", "");
+  } catch { /* /api 가 없는 환경 (저장한 파일 등) */ }
+  fallbackSnapshot("연결 없음");
 })();
 
 document.getElementById("foot").textContent =

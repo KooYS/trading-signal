@@ -15,8 +15,9 @@ export default async function handler(req, res) {
     const r = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
     if (!r.ok) return res.status(502).json({ error: "supabase", status: r.status });
     const rows = await r.json();
-    // 장중엔 20분마다 갱신되므로 CDN 캐시는 짧게, 갱신 중엔 이전 값 허용
-    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+    // 신호는 20분마다 갱신된다. 브라우저에도 60초를 주면 탭 전환·새로고침이
+    // 네트워크 없이 즉시 뜬다. CDN 은 60초 신선 + 5분간 stale 허용.
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60, stale-while-revalidate=300");
     return res.status(200).json(rows[0]?.data ?? null);
   } catch (e) {
     return res.status(502).json({ error: String(e).slice(0, 120) });
