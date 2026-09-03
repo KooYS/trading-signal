@@ -337,7 +337,8 @@ const qty = v => {
 const GLOSS = {
   band: ["외국인·기관 매집 분포",
     "최근 250거래일 동안 외국인·기관이 어느 가격대에서 순매수했는지. 하루 순매수량을 "
-    + "그날 저가~고가에 균등 분산시켜 8개 구간에 배분했다.\n\n"
+    + "그날 저가~고가에 균등 분산시켜 8개 구간에 배분했다. 제목의 일수가 실제로 쓴 거래일이다 "
+    + "— flow 수집 창이 120일이라 backfill 전에는 60일치로 그려놓고 1년 분포처럼 보였다.\n\n"
     + "현재가 아래(빨강)는 지지, 위(파랑)는 물린 물량이다. 아래가 두꺼우면 지지가 있고 "
     + "뚫리면 그 아래는 얇다는 걸 눈으로 보라고 띄운다.\n\n"
     + "한계: flow 는 '순매수 차액'이지 총매집량이 아니고, 하루 중 어느 가격에 체결됐는지도 "
@@ -630,7 +631,8 @@ function bandChart(c) {
   if (!tot) return el("div");
   const wrap = el("div", "band");
   const h = el("div", "band-h");
-  h.append(el("span", null, "외국인·기관 매집"));
+  h.append(el("span", null, "외국인·기관 매집"
+    + (c.bandDays ? ` ${c.bandDays}일` : "")));
   h.append(q("band"));
   wrap.append(h);
   const max = Math.max(...c.band.map(z => (z.f || 0) + (z.i || 0)));
