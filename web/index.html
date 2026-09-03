@@ -110,7 +110,7 @@ h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .flag.S{color:var(--sell);background:var(--sell-bg)}
 .tm{margin-left:auto;font-size:12.5px;color:var(--muted);flex:none}
 
-.body{display:grid;grid-template-columns:216px 1fr;height:376px}
+.body{display:grid;grid-template-columns:216px 1fr;height:536px}
 .pane-l{padding:12px 14px;border-right:1px solid var(--line-soft);display:flex;flex-direction:column;gap:10px;overflow:hidden}
 .pane-r{display:flex;flex-direction:column;min-height:0}
 
@@ -131,6 +131,19 @@ h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .axis.na .fill{background:var(--line)}
 .axis.na .v{color:var(--muted)}
 
+.band{display:grid;gap:2px}
+.band-h{display:flex;align-items:center;gap:4px;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted);font-weight:500;margin-bottom:2px}
+.brow{display:grid;grid-template-columns:44px 1fr 30px;align-items:center;gap:6px;font-size:10px;line-height:1.35}
+.brow.here{font-weight:600}
+.brow.here .blabel{color:var(--ink)}
+.blabel{color:var(--muted);text-align:right}
+.btrack{height:6px;background:var(--sunk);border-radius:1px;overflow:hidden}
+.bfill{height:100%;border-radius:1px;min-width:1px}
+.bfill.sup{background:var(--buy)}     /* 현재가 아래 = 지지 = 빨강(좋다) */
+.bfill.res{background:var(--sell)}    /* 현재가 위 = 물린 물량 = 파랑 */
+.brow.here .btrack{outline:1px solid var(--ink);outline-offset:1px}
+.bpct{color:var(--muted);text-align:right}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:3px 9px;font-size:12px}
 .facts dt{color:var(--muted);font-weight:300}
 .facts dd{margin:0;text-align:right;font-weight:500}
@@ -322,6 +335,20 @@ const qty = v => {
    "이게 맞는 건지 아닌지"를 안 알려주면 정보성 항목을 근거로 착각한다.
    근거는 docs/backtest.md.                                        */
 const GLOSS = {
+  band: ["외국인·기관 매집 분포",
+    "최근 250거래일 동안 외국인·기관이 어느 가격대에서 순매수했는지. 하루 순매수량을 "
+    + "그날 저가~고가에 균등 분산시켜 8개 구간에 배분했다.\n\n"
+    + "현재가 아래(빨강)는 지지, 위(파랑)는 물린 물량이다. 아래가 두꺼우면 지지가 있고 "
+    + "뚫리면 그 아래는 얇다는 걸 눈으로 보라고 띄운다.\n\n"
+    + "한계: flow 는 '순매수 차액'이지 총매집량이 아니고, 하루 중 어느 가격에 체결됐는지도 "
+    + "모른다. 밴드 경계를 정밀하게 읽으면 안 된다.",
+    ["참고용 — 네 방식(평단 대비·지지비중·물린비중·절대두께)으로 검정했으나 모두 t<2 또는 단조성 없음", "na"]],
+  regime: ["수급 국면",
+    "외국인·기관 중 한쪽만 3일 이상 연속 순매도인 상태.\n\n"
+    + "'기관만 매도'는 외국인이 받아내는 그림이라 신호 457건에서 초과수익 +1.56%p(t 2.37), "
+    + "종목-일 15,643건에서 20일 +0.45%p(t 3.46)로 두 표본에서 순서가 일치했다.\n\n"
+    + "'둘 다 매도'는 검정한 국면 중 유일한 음수(−0.30)다. 개미털기로 읽기 쉬운데 반대다.",
+    ["참고용 — 표본 457건으로 t 2.37. 확인 기준(약 350건)을 겨우 넘겨 점수엔 아직 안 넣는다", "na"]],
   heat: ["과열도",
     "그날 매수 후보들 사이의 상대 순위(0~100). 20일 밴드위치·20일선 이격·매물대 대비 "
     + "세 가지를 백분위로 눕혀 평균낸 값이다. 낮을수록 아직 덜 오른 상태.\n\n"
@@ -571,6 +598,7 @@ function buyCard(c, rank) {
     dl.append(el("dd", "mono" + (neg ? " neg" : ""), v));
   }
   L.append(dl);
+  if (c.band && c.band.length) L.append(bandChart(c));
   if (c.ind) L.append(el("div", "ind", c.ind));
   body.append(L);
 
@@ -592,6 +620,34 @@ function buyCard(c, rank) {
   R.append(list);
   body.append(R);
   wrap.append(body);
+  return wrap;
+}
+
+/* 외국인·기관 매집 분포. 점수가 아니라 지도다 — 어디에 깔려 있고
+   어디가 뚫리면 아래가 비는지 보려는 것. 검증에서 t가 안 나와 점수엔 안 넣는다. */
+function bandChart(c) {
+  const tot = c.band.reduce((a, z) => a + (z.f || 0) + (z.i || 0), 0);
+  if (!tot) return el("div");
+  const wrap = el("div", "band");
+  const h = el("div", "band-h");
+  h.append(el("span", null, "외국인·기관 매집"));
+  h.append(q("band"));
+  wrap.append(h);
+  const max = Math.max(...c.band.map(z => (z.f || 0) + (z.i || 0)));
+  for (const z of c.band) {
+    const sum = (z.f || 0) + (z.i || 0);
+    const here = c.now != null && c.now >= z.lo && c.now <= z.hi;
+    const below = c.now != null && z.hi <= c.now;      // 현재가 아래 = 지지
+    const row = el("div", "brow" + (here ? " here" : ""));
+    row.append(el("span", "blabel mono", Math.round(z.lo).toLocaleString()));
+    const track = el("div", "btrack");
+    const fill = el("div", "bfill " + (below ? "sup" : "res"));
+    fill.style.width = (max ? (sum / max) * 100 : 0) + "%";
+    track.append(fill);
+    row.append(track);
+    row.append(el("span", "bpct mono", Math.round(100 * sum / tot) + "%"));
+    wrap.append(row);
+  }
   return wrap;
 }
 
@@ -756,6 +812,9 @@ function badges(c) {
     out.push([String(d.t).replace(/^\[[^\]]*\]/, "").trim().slice(0, 18), "info", "disc"]);
   if (c.fgn >= 3) out.push(["외국인 " + c.fgn + "일 " + qty(c.fgn5), "info", "flow"]);
   if (c.ins >= 3) out.push(["기관 " + c.ins + "일 " + qty(c.ins5), "info", "flow"]);
+  /* 수급 국면 — 검정에서 순서가 두 표본에 걸쳐 일치한 유일한 수급 지표. 아직 참고용 */
+  if (c.regime === "inst_only") out.push(["기관만 매도 " + c.isell + "일", "info", "regime"]);
+  if (c.regime === "both") out.push(["외국인·기관 동시 매도", "info", "regime"]);
   if (c.vol != null && c.vol >= 2) out.push(["거래량 " + Number(c.vol).toFixed(1) + "배", "info", "vol"]);
   if (c.loss) out.push(["적자", "info", "loss"]);
   if (c.pbr != null && c.pbr < 1) out.push(["PBR " + Number(c.pbr).toFixed(1), "info", "pbr"]);

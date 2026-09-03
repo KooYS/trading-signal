@@ -270,3 +270,10 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 --   closed       = signal_round 의 최근 30일 (매도 탭이 사라진 뒤 결과를 되짚는 곳)
 -- ⚠️ 전부 current_date 기준인데 DB 타임존이 UTC다. 날짜가 넘어가는 순간이
 --    09:00 KST = 장 시작이고, 00:00~09:00 KST 에는 전날로 뜬다.
+
+-- 외국인·기관 매집 분포(가격대별 8구간). 250거래일, 하루 순매수량을 그날 저가~고가에
+-- 균등 분산. ⚠️ 점수 아님 — 네 방식 전부 t<2 또는 단조성 없음(docs/backtest.md §3).
+--   accum_band  (matview)  price_lo/hi, fgn_qty, ins_qty
+-- 수급 국면. '기관만 매도'가 유일한 후보 (+1.56%p t2.37).
+--   flow_regime (matview)  f_sell, i_sell, regime
+-- 둘 다 daily_tech_refresh() 에서 concurrently 갱신한다.
