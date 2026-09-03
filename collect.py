@@ -13,12 +13,13 @@
   fin [code…]                분기 매출·순이익·영업이익 5년치 (토스증권).
   dart_corp                  DART corp_code ↔ 종목코드 대응표. disclosure 전에 1회.
   disclosure [--all|code…]   DART 공시 목록. 기본 2019-01-01 이후.
+      --days N               최근 N일치만 (증분). 스케줄러가 매일 이걸로 돈다.
   check                      네트워크 없이 행 변환 로직 자체검증.
 """
 import hashlib, io, json, os, re, ssl, sys, time, urllib.error, urllib.parse, zipfile
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 try:                                    # ponytail: macOS 시스템 파이썬은 루트 CA가 없다
     import certifi
@@ -580,8 +581,13 @@ def disclosure(codes, since="20190101", until=None, pages=20):
     """공시 목록. 뉴스와 달리 유형이 제목에 박혀 있어 호재·악재를 가를 수 있다.
 
     상태코드: 000 정상 / 013 데이터 없음 / 020 요청한도 초과(일 2만) /
-    010·011 키 문제 / 100 파라미터 오류 / 800 점검."""
-    key = os.environ["DART_KEY"]
+    010·011 키 문제 / 100 파라미터 오류 / 800 점검.
+
+    검증에서 살아남은 유일한 지표가 IR 공시라(docs/backtest.md §3) 이게 멈추면
+    화면의 유일한 가점 근거가 조용히 빈다. 매일 증분으로 돌린다."""
+    key = os.environ.get("DART_KEY")
+    if not key:
+        raise RuntimeError("DART_KEY 환경변수가 없다. Lambda 환경변수에 등록할 것.")
     until = until or time.strftime("%Y%m%d")
     corp = corp_map(codes)
     rows, fail, skip = [], [], []
@@ -716,7 +722,14 @@ def lambda_handler(event, _context):
         return {"cmd": cmd, "upserted": dart_corp()}
     if cmd == "disclosure":
         codes = ev.get("codes") or all_codes()
-        return {"cmd": cmd, "codes": len(codes), "upserted": disclosure(codes)}
+        # days 를 주면 최근 N일만. 스케줄 입력은 고정이고 날짜는 실행 시점에 계산된다
+        days = ev.get("days")
+        kw = {}
+        if days:
+            since = datetime.now(timezone.utc).date() - timedelta(days=int(days))
+            kw = {"since": since.strftime("%Y%m%d"), "pages": 3}
+        return {"cmd": cmd, "codes": len(codes), "days": days,
+                "upserted": disclosure(codes, **kw)}
     if cmd == "news":
         want = set(event_codes(ev))
         return {"cmd": cmd, "upserted": news(
@@ -750,7 +763,12 @@ if __name__ == "__main__":
         rest = [a for a in args if not a.startswith("--")]
         codes = rest or (all_codes() if "--all" in args or not rest
                          else sorted({x["stockCode"] for _, x in today_codes()}))
-        print("upserted", disclosure(codes))
+        kw = {}
+        if "--days" in args:                       # 최근 N일치만 (증분)
+            n = int(args[args.index("--days") + 1])
+            kw = {"since": (datetime.now(timezone.utc).date()
+                            - timedelta(days=n)).strftime("%Y%m%d"), "pages": 3}
+        print("upserted", disclosure(codes, **kw))
     elif cmd == "flow_backfill":
         pages = int(args[0]) if args and args[0].isdigit() else 25
         rest = [a for a in args[1:] if not a.startswith("--")]

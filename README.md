@@ -74,8 +74,16 @@ aws lambda update-function-code --function-name trading-signal-collect \
 | 스케줄러 역할 | `trading-signal-scheduler-role` (해당 함수만 invoke) |
 | 스케줄 | `trading-signal-poll` — `cron(3,23,43 9-15 ? * MON-FRI *)` KST |
 | 스케줄 | `trading-signal-backfill` — `cron(38 16 ? * MON-FRI *)` KST |
+| 스케줄 | `trading-signal-news` — `cron(45 16 ? * MON-FRI *)` KST |
+| 스케줄 | `trading-signal-disclosure` — `cron(15 20 ? * MON-FRI *)` KST, `{"days":7}` |
+| 스케줄 | `trading-signal-flow` — `cron(30 20 ? * MON-FRI *)` KST |
 
-키는 Lambda 환경변수 `SUPABASE_URL` / `SUPABASE_KEY`(service_role 또는 `sb_secret_`)에 있다.
+키는 Lambda 환경변수 `SUPABASE_URL` / `SUPABASE_KEY`(service_role 또는 `sb_secret_`) /
+`DART_KEY`(공시)에 있다. 저장소에는 넣지 않는다.
+
+공시는 검증에서 살아남은 유일한 지표(IR)의 소스라 멈추면 화면의 가점 근거가
+조용히 빈다. `--days 7` 증분으로 매일 20:15 에 돈다 — 전량(2019~)은 20페이지씩
+긁어 매일 돌리기엔 무겁고 DART 일일 한도(2만건)도 있다. 실측 335종목 52초.
 RLS가 켜져 있고 정책이 없어서 publishable 키로는 401이 난다.
 
 수동 실행:
