@@ -181,7 +181,14 @@ button.tag.term{text-decoration:none}
 .band-lg.two{display:grid;grid-template-columns:64px 1fr 1fr;gap:0 4px}
 .band-lg.two .lg-sell{text-align:right;padding-right:6px;color:var(--sell);grid-column:2}
 .band-lg.two .lg-buy{color:var(--buy);grid-column:3}
-.r4 .warn{color:var(--warn)}
+.band-lg.two .lg-c{text-align:center;color:var(--muted)}
+/* 순포지션: 가운데 축. 양수는 오른쪽(빨강), 음수는 왼쪽(파랑)으로 자란다 */
+.btrack.mid{position:relative;border-right:0}
+.btrack.mid::before{content:"";position:absolute;left:50%;top:0;bottom:0;border-left:1px solid var(--line)}
+.btrack.mid .bfill{position:absolute;top:0;bottom:0}
+.btrack.mid .bfill.buy{left:50%}
+.btrack.mid .bfill.sell{right:50%}
+
 .facts{display:grid;grid-template-columns:auto 1fr;gap:3px 9px;font-size:12px}
 .facts dt{color:var(--muted);font-weight:300}
 .facts dd{margin:0;text-align:right;font-weight:500}
@@ -396,6 +403,9 @@ const GLOSS = {
     + "하루 순매수·순매도량을 그날 저가~고가에 균등 분산시켜 매물대와 같은 2.5% 격자에 배분했다.\n\n"
     + "양쪽을 다 그리는 이유: 1년 합계로 보면 대부분 산 만큼 팔았고 순매도인 종목이 절반이다. "
     + "산 자리만 그리면 '매집' 으로 읽히지만 실제로는 '한때 산 자리' 다. 머리의 순합계가 진짜 방향이다.\n\n"
+    + "순포지션(산 것 − 판 것)은 '그 가격대에 산 게 남아 있다' 의 근사다. 6,291 에서 판 게 4,915 에서 "
+    + "산 걸 판 건지 6,291 에서 산 걸 판 건지는 데이터로 알 수 없다. 그래도 '어느 가격대에 얼마나 들고 있나' 에 "
+    + "가장 가까운 그림이라 외인·기관 따로 그린다.\n\n"
     + "한계: flow 는 하루 순액이라 같은 날 사고판 건 상쇄되고, 하루 중 어느 가격에 체결됐는지도 모른다. "
     + "칸 경계를 정밀하게 읽으면 안 된다.",
     ["참고용 — 네 방식(평단 대비·지지비중·물린비중·절대두께)으로 검정했으나 모두 t<2 또는 단조성 없음", "na"]],
@@ -426,6 +436,15 @@ const GLOSS = {
   hot: ["과열 상위",
     "과열도가 70 이상이다. 그날 후보 중 이미 많이 오른 축이라 감점 대상이다.",
     ["검증된 감점", "ok"]],
+  low52: ["1년 최저권",
+    "매수 시점에 최근 1년 거래량의 5% 미만이 현재가 아래에 있다 — 1년 동안 거래된 물량의 95% 가 "
+    + "지금보다 비싼 값에 손바뀜했다는 뜻이다.\n\n"
+    + "처음엔 '지지가 없다' 는 경고로 붙였다. 검정해 보니 반대였다: 이 자리에서 나온 매수 신호가 "
+    + "나머지보다 초과수익이 +0.9~2.0%p 높고, 2014~2025 와 2026 두 표본에서 방향이 같다. "
+    + "20일 밴드 하단이 좋다는 과열도 결과의 1년 판이다.\n\n"
+    + "한계: 시세 이력이 없는 79종목(라운드의 17%)은 이 판정을 못 받는다. 상장폐지된 종목이 있다면 "
+    + "최저권 쪽에 몰렸을 것이고, 그건 여기 없다. 그리고 여전히 셋 중 하나는 −14% 로 진다.",
+    ["검증됨 — 2014~25 +1.39%p (t 4.25, n 1,379) · 2026 +2.51%p (t 3.73, n 566)", "ok"]],
   ir: ["IR 공시",
     "신호 직전 7일 안에 기업설명회(IR) 공시가 있었다. 회사가 지금 주주와 소통하려 한다는 신호다.",
     ["검증됨 — 시장 대비 +3.11%p, 2019~2026 8년 내내 양수 (t 2.89, n 157)", "ok"]],
@@ -654,17 +673,14 @@ function srLine(c) {
   if (c.px == null) return null;
   const { sup, res } = levels(c);
   const w = el("div", "r4");
-  /* 1년 거래량의 5% 미만이 현재가 아래 = 1년 최저권. 얇은 지지가 하나 있어도 경고는 남긴다 */
-  const floor = c.belowShare != null && c.belowShare <= 5, ceil = c.belowShare != null && c.belowShare >= 95;
-  const mk = (label, arr, cls, none, tag) => {
+  const mk = (label, arr, cls, none) => {
     const sp = el("span");
     sp.append(document.createTextNode(label + " "));
     sp.append(arr.length ? el("b", cls, won(arr[0].lo) + "~" + won(arr[0].hi)) : el("b", null, none));
-    if (tag) sp.append(el("b", "warn", " · " + tag));
     return sp;
   };
-  w.append(mk("지지", sup, "sup", "없음(−26% 내)", floor ? "1년 최저권" : null));
-  w.append(mk("저항", res, "res", "없음(+34% 내)", ceil ? "1년 최고권" : null));
+  w.append(mk("지지", sup, "sup", "없음(−26% 내)"));
+  w.append(mk("저항", res, "res", "없음(+34% 내)"));
   return w;
 }
 
@@ -714,11 +730,11 @@ function bandChart(c) {
   lg.append(el("span", "lg-sell", "◀ 판 것"));
   lg.append(el("span", "lg-buy", "산 것 ▶"));
   wrap.append(lg);
-  const rows = new Map(c.band.map(z => [z[0], z]));
-  const max = Math.max(...c.band.map(z => Math.max(z[1], z[2])));
+  const rows = new Map(c.band.map(([k, bf, bi, sf, si]) => [k, [bf + bi, sf + si]]));
+  const max = Math.max(...[...rows.values()].flat());
   for (let k = 11; k >= -12; k--) {
     const lo = kLo(c.px, k), hi = kHi(c.px, k);
-    const [, buy = 0, sell = 0] = rows.get(k) || [];
+    const [buy = 0, sell = 0] = rows.get(k) || [];
     const here = c.now != null && c.now >= lo && c.now < hi;
     const row = el("div", "brow" + (here ? " here" : ""));
     row.append(el("span", "blabel mono", won(Math.round(lo))));
@@ -730,6 +746,41 @@ function bandChart(c) {
     const bf = el("div", "bfill buy"); bf.style.width = (max ? buy / max * 100 : 0) + "%";
     bf.title = "순매수 " + qty(buy);
     bt.append(bf); row.append(bt);
+    wrap.append(row);
+  }
+  return wrap;
+}
+
+/* 순포지션 = 가격대별 산 것 − 판 것. "그 값에 산 게 남아 있다" 의 근사다 —
+   6,291 에서 판 게 4,915 에서 산 걸 판 건지 6,291 에서 산 걸 판 건지는 모른다.
+   그래도 '어느 가격대에 얼마나 들고 있나' 에 가장 가까운 그림이라 외인·기관 따로 그린다. */
+function netChart(c) {
+  if (!c.band || !c.band.length || c.px == null) return el("div");
+  const wrap = el("div", "band big two net");
+  const h = el("div", "band-h");
+  h.append(term("순포지션 · 산 것 − 판 것", "band"));
+  wrap.append(h);
+  const lg = el("div", "band-lg two");
+  lg.append(el("span", "lg-c", "외인"));
+  lg.append(el("span", "lg-c", "기관"));
+  wrap.append(lg);
+  const rows = new Map(c.band.map(([k, bf, bi, sf, si]) => [k, [bf - sf, bi - si]]));
+  const max = Math.max(...[...rows.values()].flat().map(Math.abs));
+  const bar = v => {
+    const t = el("div", "btrack mid");
+    const f = el("div", "bfill " + (v > 0 ? "buy" : "sell"));
+    f.style.width = (max ? Math.abs(v) / max * 50 : 0) + "%";
+    f.title = (v >= 0 ? "남은 매수 " : "순매도 ") + qty(v);
+    t.append(f);
+    return t;
+  };
+  for (let k = 11; k >= -12; k--) {
+    const lo = kLo(c.px, k), hi = kHi(c.px, k);
+    const [nf = 0, ni = 0] = rows.get(k) || [];
+    const row = el("div", "brow" + (c.now != null && c.now >= lo && c.now < hi ? " here" : ""));
+    row.append(el("span", "blabel mono", won(Math.round(lo))));
+    row.append(bar(nf));
+    row.append(bar(ni));
     wrap.append(row);
   }
   return wrap;
@@ -800,7 +851,7 @@ function openDetail(c) {
   /* 가운데 — 매집 분포 */
   const b2 = el("div", "mcol");
   b2.append(vpChart(c));
-  if (c.band && c.band.length) b2.append(bandChart(c));
+  if (c.band && c.band.length) { b2.append(bandChart(c)); b2.append(netChart(c)); }
   else b2.append(el("p", "empty", "수급 이력이 없어 매집 분포를 못 그린다."));
   grid.append(b2);
 
@@ -1006,6 +1057,8 @@ function syncCounts() {
 function badges(c, brief) {
   const out = [];
   if (c.ir) out.push(["IR 공시 " + String(c.ir).slice(5), "ok", "ir"]);
+  /* 1년 거래량의 5% 미만이 현재가 아래. 경고로 붙였다가 검정해 보니 반대였다(§3) */
+  if (c.belowShare != null && c.belowShare <= 5) out.push(["1년 최저권", "ok", "low52"]);
   /* brief = 행. 과열도는 알약이 따로 있고, 공시·연속 순매수·거래량은 무효라 상세로 */
   if (!brief) {
     if (c.heat != null && c.heat >= 70) out.push(["과열 상위 " + c.heat, "bad", "hot"]);
