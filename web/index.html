@@ -67,7 +67,12 @@ h1{margin:0 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .chip:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .count{margin-left:auto;font-size:12px;color:var(--muted)}
-.live{margin-left:auto;font-size:11.5px;padding:2px 8px;border-radius:2px;color:var(--muted)}
+.qbox{font:inherit;font-size:12.5px;padding:5px 9px;border-radius:2px;width:150px;
+  background:var(--surface);color:var(--ink);border:1px solid var(--line);margin-left:auto}
+.qbox::placeholder{color:var(--muted)}
+.qbox:focus{outline:none;border-color:var(--muted)}
+.qbox:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+.live{margin-left:10px;font-size:11.5px;padding:2px 8px;border-radius:2px;color:var(--muted)}
 .live:empty{display:none}
 .live.wait{color:var(--muted);background:var(--sunk)}
 .live.ok{color:var(--ink-2);background:var(--sunk)}
@@ -326,6 +331,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);font-si
 
 <div class="bar">
   <div class="bar-in" id="filters">
+    <input id="q" class="qbox" type="search" placeholder="종목 검색  /"
+           autocomplete="off" aria-label="종목 검색">
     <span class="live" id="live"></span>
     <span class="count" id="count"></span>
   </div>
@@ -521,8 +528,14 @@ const store = {
 };
 const FAV = new Set(store.get(FAV_KEY, []));
 let favOnly = false;
+let query = "";      // 종목명·코드 검색어
 const key = c => c.code + ":" + (c.sd || "");
-const pick = rows => favOnly ? rows.filter(r => FAV.has(r.code)) : rows;
+const pick = rows => {
+  let out = favOnly ? rows.filter(r => FAV.has(r.code)) : rows;
+  if (query) out = out.filter(r =>
+    (r.name || "").toLowerCase().includes(query) || (r.code || "").includes(query));
+  return out;
+};
 
 function toggleFav(code) {
   FAV.has(code) ? FAV.delete(code) : FAV.add(code);
@@ -982,7 +995,9 @@ const TABS = [
   ["buy",    "오늘 매수", () => pick(BUYS).length],
   ["open",   "진행중",    () => pick(OPEN).length],
   ["sell",   "오늘 매도", () => pick(SELLS).length],
-  ["closed", "청산",      () => CLOSED.length || D.closedCount || 0],
+  // 청산은 탭을 눌러야 받아온다. 받기 전엔 걸러진 수를 알 수 없어 총계 대신 – 를 쓴다.
+  ["closed", "청산",      () => CLOSED.length ? pick(CLOSED).length
+                              : (query || favOnly) ? "–" : D.closedCount || 0],
   ["all",    "전체",      () => pick(BUYS).length + pick(SELLS).length],
 ];
 const HINT = {
@@ -1072,7 +1087,7 @@ async function loadClosed() {
     closedState = "fail";
   }
   const b = document.querySelector('.chip[data-f="closed"] .n');
-  if (b) b.textContent = String(CLOSED.length);
+  if (b) b.textContent = String(TABS.find(t => t[0] === "closed")[2]());
   render();
 }
 
@@ -1090,6 +1105,7 @@ function render() {
       filter === "closed" && closedState === "loading" ? "청산 이력을 불러오는 중…"
       : filter === "closed" && closedState === "fail" ? "청산 이력을 못 가져왔다."
       : !LOADED ? "불러오는 중…"
+      : query ? `"${query}" 에 해당하는 종목이 이 탭에 없다. 다른 탭에는 있을 수 있다.`
       : favOnly ? "관심 종목 중에는 해당하는 게 없다. ★ 관심만 을 끄면 전체가 보인다."
       : EMPTY[filter]));
     cnt.textContent = LOADED ? "0건" : "";
@@ -1212,6 +1228,25 @@ function allTable() {
   t.append(tb);
   return t;
 }
+
+/* 종목이 100개를 넘어 손이 자주 가는 자리다. / 로 진입, Esc 로 비운다. */
+document.addEventListener("keydown", e => {
+  const q = document.getElementById("q");
+  const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || "");
+  if (e.key === "/" && !typing) { e.preventDefault(); q.focus(); q.select(); return; }
+  if (e.key === "Escape" && document.activeElement === q && q.value) {
+    q.value = ""; q.dispatchEvent(new Event("input")); e.stopPropagation();
+  }
+});
+
+document.getElementById("q").addEventListener("input", e => {
+  query = e.target.value.trim().toLowerCase();
+  for (const [key, , n] of TABS) {
+    const b = document.querySelector(`.chip[data-f="${key}"] .n`);
+    if (b) b.textContent = String(n());
+  }
+  render();
+});
 
 document.getElementById("filters").addEventListener("click", e => {
   const b = e.target.closest(".chip");
