@@ -278,6 +278,9 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 --   flow_regime (matview)  f_sell, i_sell, regime
 -- 둘 다 daily_tech_refresh() 에서 concurrently 갱신한다.
 
--- 수급 이력이 얕은 종목(최근 1년 200거래일 미만). 일일 backfill 이 이 목록을
--- 40개씩 메운다. flow 수집 창이 120일이라 신규 편입 종목은 밴드가 짧게 그려진다.
---   shallow_flow (view)  stock_code, days
+-- 수급 이력이 얕은 종목. 일일 backfill 이 이 목록을 40개씩 메운다.
+-- flow 수집 창이 120일이라 신규 편입 종목은 밴드가 짧게 그려진다.
+-- ⚠️ '덜 받은 것'과 '원래 없는 것'을 구분한다 — price 거래일수 대비 부족분으로
+--    판정하므로 신규 상장 종목(상장 이후 전부 있음)은 제외된다. 안 그러면
+--    매일 40개 슬롯을 이들이 차지하고 헛돈다.
+--   shallow_flow (view)  stock_code, days, available
