@@ -271,9 +271,10 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 -- ⚠️ 전부 current_date 기준인데 DB 타임존이 UTC다. 날짜가 넘어가는 순간이
 --    09:00 KST = 장 시작이고, 00:00~09:00 KST 에는 전날로 뜬다.
 
--- 외국인·기관 매집 분포(가격대별 8구간). 250거래일, 하루 순매수량을 그날 저가~고가에
--- 균등 분산. ⚠️ 점수 아님 — 네 방식 전부 t<2 또는 단조성 없음(docs/backtest.md §3).
---   accum_band  (matview)  price_lo/hi, fgn_qty, ins_qty
+-- 외국인·기관 매집 분포. 1년, 하루 순매수·순매도량을 그날 저가~고가에 균등 분산해
+-- 현재가 기준 2.5% 격자(k=-12..11)에 배분. 산 것·판 것을 따로 둔다 — 대부분 산 만큼 팔았다.
+-- ⚠️ 점수 아님 — 네 방식 전부 t<2 또는 단조성 없음(docs/backtest.md §3).
+--   accum_band  (matview)  bucket(k), price_lo/hi, buy_f/buy_i/sell_f/sell_i, tot_* (1년 합계)
 -- 수급 국면. '기관만 매도'가 유일한 후보 (+1.56%p t2.37).
 --   flow_regime (matview)  f_sell, i_sell, regime
 -- 둘 다 daily_tech_refresh() 에서 concurrently 갱신한다.
@@ -289,8 +290,11 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 -- page_live 에는 배지용 closedCount 만 남긴다. /api/data?part=closed 로 받는다.
 --   page_closed (view)  최근 30일 라운드
 
--- 총거래량 매물대(250일, 20구간)와 거기서 뽑은 지지·저항.
--- accum_band(외국인·기관 순매수)와 달리 '누가 샀든' 전체 거래량이라 매물대에 가깝다.
--- ⚠️ 예측 지표가 아니라 사실 기술이다. 점수에 넣지 않는다.
---   vol_profile (matview)  price_lo/hi, vol, share
---   sr_level    (matview)  support, resistance, below_share  ← vol_profile 뒤에 갱신
+-- 총거래량 매물대(1년, 현재가 기준 2.5% 격자 24칸 = -26%~+34%)와 거기서 뽑은 지지·저항.
+-- accum_band(외국인·기관)와 달리 '누가 샀든' 전체 거래량이라 매물대에 가깝다.
+-- 격자가 현재가 기준이라 칸 경계는 클라이언트가 px 와 k 로 되살린다(칸 폭 항상 2.5%).
+-- 지지·저항 = 그 쪽 평균의 1.5배(1%~2.5% 로 가둠) 넘는 가장 가까운 칸 위아래 2개.
+-- ⚠️ 예측 지표가 아니라 사실 기술이다. 점수에 넣지 않는다. 근거는 docs/backtest.md §5-3.
+--   vol_profile (matview)  bucket(k), price_lo/hi, vol, share, days
+--   sr_level    (matview)  now_price(px), support, resistance, below_share, out_below, out_above
+--                          ← vol_profile 뒤에 갱신
