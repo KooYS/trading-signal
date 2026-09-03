@@ -288,3 +288,9 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 -- 청산 이력은 본 응답의 41%(71KB)인데 탭을 열 때만 쓴다. 별도 뷰로 뺐다.
 -- page_live 에는 배지용 closedCount 만 남긴다. /api/data?part=closed 로 받는다.
 --   page_closed (view)  최근 30일 라운드
+
+-- 총거래량 매물대(250일, 20구간)와 거기서 뽑은 지지·저항.
+-- accum_band(외국인·기관 순매수)와 달리 '누가 샀든' 전체 거래량이라 매물대에 가깝다.
+-- ⚠️ 예측 지표가 아니라 사실 기술이다. 점수에 넣지 않는다.
+--   vol_profile (matview)  price_lo/hi, vol, share
+--   sr_level    (matview)  support, resistance, below_share  ← vol_profile 뒤에 갱신
