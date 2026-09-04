@@ -281,6 +281,10 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 -- matview 가 아니라 테이블이다 — 날짜순 상태 추적이라 plpgsql 루프(hold_band_refresh)로 채운다.
 -- ⚠️ 생존계수를 numeric 으로 9만 번 곱하면 자릿수가 폭발해 타임아웃. float8 로 한다.
 --   hold_band  (table)  bucket(k), hold_f, hold_i   ← daily_tech_refresh 끝에서 갱신
+--   hold_test  (table)  검정용 스냅샷. 2019-04 부터 연속 재생, 매수 신호 직전 위/아래 잔량 (hold_test_run)
+-- 종목 하나의 상세. 진행중·청산 행을 탭하면 /api/data?part=stock&code= 로 이 뷰를 한 종목만 읽는다.
+-- page_live 에 그 행들의 뉴스·매집·매물대를 싣지 않는 이유는 페이로드다. 과열도는 여기 없다(그날 후보 순위).
+--   stock_detail (view)  stock_code, data
 -- 수급 국면. '기관만 매도'가 유일한 후보 (+1.56%p t2.37).
 --   flow_regime (matview)  f_sell, i_sell, regime
 -- 둘 다 daily_tech_refresh() 에서 concurrently 갱신한다.

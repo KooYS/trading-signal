@@ -237,6 +237,8 @@ table{width:100%;border-collapse:collapse;font-size:13px;background:var(--surfac
 th{text-align:left;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
   font-weight:500;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--sunk)}
 td{padding:7px 12px;border-bottom:1px solid var(--line-soft)}
+tbody tr{cursor:pointer}
+tbody tr:hover td{background:var(--sunk)}
 tr:last-child td{border-bottom:0}
 td.r,th.r{text-align:right}
 .age{color:var(--muted);font-size:12px}
@@ -740,12 +742,15 @@ function bandChart(c) {
   wrap.append(lg);
   const rows = new Map(c.band.map(([k, bf, bi, sf, si]) => [k, [bf + bi, sf + si]]));
   const max = Math.max(...[...rows.values()].flat());
-  for (let k = 11; k >= -12; k--) {
-    const lo = kLo(c.px, k), hi = kHi(c.px, k);
+  /* -13 / 12 는 창 밖(−26%↓ / +34%↑)에서 사고판 것. 남은 물량 차트의 ↑↓ 행과 같은 칸이다 */
+  for (let k = 12; k >= -13; k--) {
+    const lo = k === 12 ? kHi(c.px, 11) : k === -13 ? 0 : kLo(c.px, k);
+    const hi = k === 12 ? Infinity : k === -13 ? kLo(c.px, -12) : kHi(c.px, k);
     const [buy = 0, sell = 0] = rows.get(k) || [];
     const here = c.now != null && c.now >= lo && c.now < hi;
-    const row = el("div", "brow" + (here ? " here" : ""));
-    row.append(el("span", "blabel mono", won(Math.round(lo))));
+    const row = el("div", "brow" + (here ? " here" : "") + (k === 12 || k === -13 ? " edge" : ""));
+    row.append(el("span", "blabel mono",
+      k === 12 ? won(Math.round(lo)) + "↑" : k === -13 ? won(Math.round(hi)) + "↓" : won(Math.round(lo))));
     const st = el("div", "btrack sell");
     const sf = el("div", "bfill sell"); sf.style.width = (max ? sell / max * 100 : 0) + "%";
     sf.title = "순매도 " + qty(-sell);
@@ -812,6 +817,27 @@ function holdChart(c) {
 
 /* ── 상세 ────────────────────────────────────────────────────
    카드는 훑고 비교하는 화면이라 가볍게 두고, 정독할 것은 여기로 모은다. */
+/* 진행중·매도·청산 행의 상세. page_live 는 이 행들에 뉴스·매집·매물대를 안 싣는다(페이로드) —
+   탭할 때 한 종목만 받아 행의 값과 합친다. 행의 값(신호가·평가)이 우선이고 상세는 보충이다.
+   과열도는 '그날 매수 후보 사이의 순위' 라 여기선 없다. */
+const DETAIL = new Map();
+async function openStock(o) {
+  let d = DETAIL.get(o.code);
+  if (d === undefined) {
+    try {
+      const k = new URLSearchParams(location.search).get("k");
+      const r = await fetch(`/api/data?part=stock&code=${encodeURIComponent(o.code)}` + (k ? "&k=" + encodeURIComponent(k) : ""));
+      d = r.ok ? await r.json() : null;
+    } catch { d = null; }
+    DETAIL.set(o.code, d);
+  }
+  openDetail({ ...(d || {}), ...o,
+    now: o.now ?? (d && d.now),
+    price: o.buy ?? o.bp ?? o.price,
+    gap: o.unreal ?? o.profit ?? o.gap,
+    news: (d && d.news) || [] });
+}
+
 function openDetail(c) {
   const back = el("div", "modal-back");
   const box = el("div", "modal");
@@ -978,6 +1004,7 @@ function sellTable() {
                       ["실현수익률", 1], ["보유", 1]]);
   for (const s of pick(SELLS)) {
     const tr = el("tr");
+    tr.addEventListener("click", e => { if (!e.target.closest("button, a")) openStock(s); });
     tr.append(starCell(s.code));
     tr.append(nameCell(s));
     tr.append(td("코드", "mono col-code", s.code));
@@ -1004,6 +1031,7 @@ function closedTable() {
                       ["실현수익률", 1], ["보유", 1]]);
   for (const c of pick(CLOSED)) {
     const tr = el("tr");
+    tr.addEventListener("click", e => { if (!e.target.closest("button, a")) openStock(c); });
     tr.append(starCell(c.code));
     tr.append(td("매도일", "mono", c.sd));
     tr.append(nameCell(c));
@@ -1198,6 +1226,7 @@ function openTable() {
                       ["신호가", 1], ["현재가", 1], ["신호 후", 1], ["수급", 0]]);
   for (const o of pick(OPEN)) {
     const tr = el("tr");
+    tr.addEventListener("click", e => { if (!e.target.closest("button, a")) openStock(o); });
     tr.append(starCell(o.code));
     tr.append(td("경과", "r age", o.held + "일 전"));
     tr.append(nameCell(o));

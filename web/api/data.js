@@ -9,9 +9,17 @@ export default async function handler(req, res) {
   if (secret && req.query.k !== secret) {
     return res.status(401).json({ error: "unauthorized" });
   }
-  // 청산 이력은 전체의 41%(71KB)인데 탭을 열 때만 쓴다 → 별도 요청으로 뺐다
-  const view = req.query.part === "closed" ? "page_closed" : "page_live";
-  const url = `${process.env.SUPABASE_URL}/rest/v1/${view}?select=data`;
+  // 청산 이력은 전체의 41%(71KB)인데 탭을 열 때만 쓴다 → 별도 요청으로 뺐다.
+  // 진행중·청산 행의 상세(뉴스·매집·매물대)도 같은 이유로 탭할 때 한 종목만 받는다.
+  const base = `${process.env.SUPABASE_URL}/rest/v1/`;
+  let url;
+  if (req.query.part === "stock") {
+    const code = String(req.query.code || "");
+    if (!/^[0-9A-Z]{6}$/.test(code)) return res.status(400).json({ error: "code" });
+    url = `${base}stock_detail?select=data&stock_code=eq.${code}`;
+  } else {
+    url = `${base}${req.query.part === "closed" ? "page_closed" : "page_live"}?select=data`;
+  }
   const key = process.env.SUPABASE_KEY;
   try {
     const r = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
