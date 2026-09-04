@@ -285,6 +285,9 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 -- 종목 하나의 상세. 진행중·청산 행을 탭하면 /api/data?part=stock&code= 로 이 뷰를 한 종목만 읽는다.
 -- page_live 에 그 행들의 뉴스·매집·매물대를 싣지 않는 이유는 페이로드다. 과열도는 여기 없다(그날 후보 순위).
 --   stock_detail (view)  stock_code, data
+-- 수급 데이터 신뢰도. 1년 외인 순매수 합계(%p)와 보유율 변화가 2%p 넘게 어긋나면 차트에 경고.
+-- 상장주식수는 시총÷종가 (fundamental.shares_out 은 17종목이 낡았다). 보유율 0 은 결측으로 본다.
+--   flow_check (view)  shares, frate, gap_pp
 -- 수급 국면. '기관만 매도'가 유일한 후보 (+1.56%p t2.37).
 --   flow_regime (matview)  f_sell, i_sell, regime
 -- 둘 다 daily_tech_refresh() 에서 concurrently 갱신한다.
