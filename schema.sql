@@ -283,6 +283,9 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 --   hold_band  (table)  bucket(k), hold_f, hold_i   ← daily_tech_refresh 끝에서 갱신
 --   hold_test  (table)  검정용 스냅샷. 2019-04 부터 연속 재생, 매수 신호 직전 위/아래 잔량 + ±10% 안쪽 잔량 (hold_test_run)
 --   round_path (matview) 검정용. 라운드 안 최저가/최고가(낙폭·상승폭), 매수 전 60일 평균 거래량. 분석 전용, 일일 갱신 아님
+--   feat_round (matview) 검정용 피처 26,317 라운드. 매수일 이전 데이터만(모멘텀·변동성·거래량·지수 국면·종목 이력). 분석 전용
+-- 1년·120일·60일 수익률(최근 종가 / N거래일 전 종가). '1년 -40%↓' 배지의 근거. daily_tech_refresh 에서 갱신.
+--   mom250 (matview)  ret60, ret120, ret250
 -- 종목 하나의 상세. 진행중·청산 행을 탭하면 /api/data?part=stock&code= 로 이 뷰를 한 종목만 읽는다.
 -- page_live 에 그 행들의 뉴스·매집·매물대를 싣지 않는 이유는 페이로드다. 과열도는 여기 없다(그날 후보 순위).
 --   stock_detail (view)  stock_code, data
