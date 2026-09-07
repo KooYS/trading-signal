@@ -270,6 +270,13 @@ create index if not exists mkt_idx on mkt_index (trade_date);
 --   closed       = signal_round 의 최근 30일 (매도 탭이 사라진 뒤 결과를 되짚는 곳)
 -- ⚠️ 전부 current_date 기준인데 DB 타임존이 UTC다. 날짜가 넘어가는 순간이
 --    09:00 KST = 장 시작이고, 00:00~09:00 KST 에는 전날로 뜬다.
+-- ⚠️ /api/data 는 page_live 를 직접 읽지 않는다. 뷰를 요청마다 돌리면 warm 1.6s 에
+--    버퍼 260,356 페이지(2.0GB, shared_buffers 의 9배)라 동시 요청 몇 개면 authenticator 의
+--    statement_timeout 8s 를 넘겨 57014 → PostgREST 500 → 502 가 났다(10개 동시로 100% 재현).
+--   page_cache (table)  key='live', data, updated_at   ← pg_cron 'page-live-refresh' 가 5분마다 update
+--    matview 가 아니라 테이블인 건 통짜 refresh 의 AccessExclusiveLock 때문이다. 실측 7.98초였고
+--    그동안 읽는 쪽이 막히면 같은 타임아웃에 다시 걸린다. update 는 읽기를 안 막는다(hold_band 와 같은 이유).
+--    5분인 건 수집(20분)과 어긋나면 신선도가 40분까지 벌어져서다.
 
 -- 외국인·기관 매집 분포. 1년, 하루 순매수·순매도량을 그날 저가~고가에 균등 분산해
 -- 현재가 기준 2.5% 격자(k=-12..11)에 배분. 산 것·판 것을 따로 둔다 — 대부분 산 만큼 팔았다.

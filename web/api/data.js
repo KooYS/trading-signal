@@ -17,8 +17,12 @@ export default async function handler(req, res) {
     const code = String(req.query.code || "");
     if (!/^[0-9A-Z]{6}$/.test(code)) return res.status(400).json({ error: "code" });
     url = `${base}stock_detail?select=data&stock_code=eq.${code}`;
+  } else if (req.query.part === "closed") {
+    url = `${base}page_closed?select=data`;
   } else {
-    url = `${base}${req.query.part === "closed" ? "page_closed" : "page_live"}?select=data`;
+    // page_live 를 요청마다 돌리면 동시 요청 몇 개에 statement_timeout(8s)을 넘겼다.
+    // pg_cron 이 5분마다 채우는 1행 테이블을 읽는다 — 수집이 20분 주기라 손해 없다.
+    url = `${base}page_cache?select=data&key=eq.live`;
   }
   const key = process.env.SUPABASE_KEY;
   try {
