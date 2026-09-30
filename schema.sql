@@ -67,6 +67,13 @@ alter table news enable row level security;
 
 -- 종목 펀더멘탈 스냅샷 (토스증권). 스펙: docs/toss-invest-api.md
 -- PER·PBR은 주가에 연동돼 매일 바뀌므로 날짜별로 쌓는다. 하루 1행.
+-- ⚠️ 한 행의 컬럼들이 같은 시점이 아니다. 매일 새로 받는 건 시세 4개
+--    (close_price·market_cap·high_52w·low_52w) 뿐이고, 나머지는 직전 행에서
+--    그대로 이월된다(collect.py `_CARRY`). 전량 갱신은 그날 신호가 난 종목과
+--    처음 보는 종목만 한다 — 미청산이 800을 넘으면서 종목당 4요청 × 820 =
+--    402초가 람다 상한을 넘겨 2026-09-18~09-30 수집이 통째로 멈췄었다.
+--    그래서 per·pbr 은 close_price 보다 며칠 낡을 수 있다. 진행중 목록의
+--    현재가·평가손익(open_position)은 시세 쪽이라 항상 당일이다.
 create table if not exists fundamental (
   stock_code    text not null,
   as_of         date not null,

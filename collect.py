@@ -165,6 +165,7 @@ def poll():
         live.update({d["stockCode"]: d
                      for d in tr("TR_SIGNAL21", list_Stock=codes[i:i + 100])})
     n = upsert([live_row(f, x, live) for f, x in items])
+    sig = set(codes)                     # 오늘 신호 종목. 이것만 펀더멘탈 전량 갱신
     # 미청산 보유 종목도 포함한다. 오늘 신호에 없다고 빼면 어제 산 종목의
     # 현재가·수급이 비어 추적 화면이 깨진다.
     try:
@@ -174,9 +175,16 @@ def poll():
         print(f"open_position skipped: {e}", file=sys.stderr)
     # 펀더멘탈·수급은 하루 1행이면 충분하다. 아직 없는 종목만 채우면
     # 그날 첫 폴링이 전부 긁고 이후엔 신규 편입분만 몇 건 붙는다.
+    # 미청산이 800종목을 넘으면서 종목당 4요청 × 820 = 402초가 됐고 람다 상한
+    # 300초를 넘겨 2026-09-18 부터 통째로 죽었다. 매일 바뀌는 건 시세뿐이라
+    # 오늘 신호 종목만 전량 받고 나머지는 배치 시세로 잇는다. flow 도 매일
+    # 120거래일(종목당 161KB)을 다시 받을 이유가 없다 — 20거래일이면 27KB다.
     out = {"signals": n}
-    for name, fn, missing in (("fundamentals", fund, missing_today("fundamental", "as_of")),
-                              ("flows", flow, missing_today("flow", "trade_date"))):
+    for name, fn, missing in (
+            ("fundamentals", lambda cs: fund(cs, full=sig),
+             missing_today("fundamental", "as_of")),
+            ("flows", lambda cs: flow(cs, size=20),
+             missing_today("flow", "trade_date"))):
         try:
             out[name] = fn([c for c in codes if c in missing])
         except Exception as e:
@@ -347,18 +355,67 @@ def fund_row(code, today):
     }
 
 
-def fund(codes):
+# 분기 단위로나 바뀌는 값들. 시세만 받는 종목은 직전 행에서 그대로 잇는다.
+# per·pbr·psr·div_yield 는 주가를 따라 매일 움직이지만 investment-indicators
+# 에서만 오고, 그것 하나 때문에 종목당 4요청을 매일 돌릴 값은 아니다.
+_CARRY = ("per", "pbr", "psr", "roe", "eps", "bps", "div_yield", "market",
+          "industry", "ceo", "listed_on", "shares_out", "sales_mix")
+
+
+def fund_prices(codes):
+    """시세만 배치로. productCodes 는 복수형이라 한 번에 여러 종목이 온다
+    (100개를 붙여도 0.15초 — 실측). 진행중 행의 now_price·unreal_pct 가
+    여기서 나온 close_price 를 쓴다."""
+    out = {}
+    for i in range(0, len(codes), 100):
+        q = ",".join("A" + c for c in codes[i:i + 100])
+        for x in req(f"{TOSS}/v3/stock-prices/details?productCodes={q}",
+                     headers={"User-Agent": H["User-Agent"]})["result"]:
+            out[x["code"][1:]] = x                 # "A005930" → "005930"
+        time.sleep(0.2)
+    return out
+
+
+def fund(codes, full=()):
+    """펀더멘탈 하루 1행.
+
+    종목당 4요청을 다 돌리는 건 full(오늘 신호)과 처음 보는 종목뿐이다.
+    나머지는 배치 시세로 시세만 갈아끼우고 느린 값은 직전 행에서 잇는다.
+    820종목 기준 402초 → 20초. 미청산이 800을 넘으면서 매일 전량 갱신이
+    람다 상한 300초를 넘겨 2026-09-18 부터 수집이 통째로 멈췄었다.
+
+    200행마다 쓰는 건 죽어도 진전을 남기려는 거다. 끝에 한 번만 쓰면
+    타임아웃 때 한 줄도 안 남아 다음 폴링이 영원히 같은 자리를 돈다."""
     today = time.strftime("%Y-%m-%d")
-    rows, fail = [], []
+    prev = {r["stock_code"]: r for r in sb_get(
+        "fundamental_latest?select=stock_code," + ",".join(_CARRY) + "&limit=5000")}
+    want = set(full)
+    full = {c for c in codes if c in want or c not in prev}   # 처음 보면 전량
+    px = fund_prices([c for c in codes if c not in full])
+
+    rows, fail, n = [], [], 0
     for c in codes:
         try:
-            rows.append(fund_row(c, today))
+            if c in full:
+                rows.append(fund_row(c, today))
+                time.sleep(0.2)
+            elif c in px:
+                rows.append({"stock_code": c, "as_of": today,
+                             **{k: prev[c][k] for k in _CARRY},
+                             "market_cap": px[c].get("marketCap"),
+                             "close_price": px[c].get("close"),
+                             "high_52w": px[c].get("high52w"),
+                             "low_52w": px[c].get("low52w")})
+            else:
+                fail.append((c, "시세 없음"))      # 상장폐지·거래정지
         except Exception as e:
             fail.append((c, str(e)[:60]))   # 신규상장·ETF는 지표가 없을 수 있다
-        time.sleep(0.2)
+        if len(rows) >= 200:
+            n += upsert(rows, "fundamental", "stock_code,as_of")
+            rows = []
     if fail:
         print(f"  건너뜀 {len(fail)}종목: {fail[:3]}", file=sys.stderr)
-    return upsert(rows, "fundamental", "stock_code,as_of")
+    return n + upsert(rows, "fundamental", "stock_code,as_of")
 
 
 def flow_rows(code, body):
@@ -404,7 +461,7 @@ def flow(codes, size=120, pages=1):
     number=2&size=120&key=2026-03-09 로 붙이는 식이다. JSON 통째로나
     pagingParam.key 같은 점 표기는 무시당한다. lastPage 로 끝을 판단한다.
     1페이지 ≈ 120거래일 ≈ 5.7개월."""
-    rows, fail = [], []
+    rows, fail, n = [], [], 0
     for c in codes:
         q = f"productCode=A{c}&size={size}"
         try:
@@ -421,9 +478,12 @@ def flow(codes, size=120, pages=1):
         except Exception as e:
             fail.append((c, str(e)[:50]))
         time.sleep(0.2)
+        if len(rows) >= 2000:          # fund 와 같은 이유로 쪼개 쓴다
+            n += upsert(rows, "flow", "stock_code,trade_date")
+            rows = []
     if fail:
         print(f"  건너뜀 {len(fail)}: {fail[:3]}", file=sys.stderr)
-    return upsert(rows, "flow", "stock_code,trade_date")
+    return n + upsert(rows, "flow", "stock_code,trade_date")
 
 
 def price_rows(code, candles):
@@ -731,7 +791,10 @@ def lambda_handler(event, _context):
         if cmd == "flow_backfill":
             return {"cmd": cmd, "codes": len(codes),
                     "upserted": flow(codes, pages=int(ev.get("pages", 25)))}
-        fn = {"backfill": backfill, "flow": flow, "fund": fund, "fin": fin}.get(cmd)
+        # cmd=fund 는 손으로 부르는 경로다 — 전량 받는다. poll 안의 자동 갱신만
+        # 시세 배치로 때운다(fund 독스트링).
+        fn = {"backfill": backfill, "flow": flow, "fin": fin,
+              "fund": lambda cs: fund(cs, full=cs)}.get(cmd)
         if fn:
             out = {"cmd": cmd, "codes": len(codes), "upserted": fn(codes)}
             if cmd == "backfill":          # 하루 한 번 수급 이력도 함께 메운다
@@ -774,7 +837,8 @@ if __name__ == "__main__":
         print("upserted", flow([c for c in codes if not args or c in args]))
     elif cmd == "fund":
         codes = sorted({x["stockCode"] for _, x in today_codes()})
-        print("upserted", fund([c for c in codes if not args or c in args]))
+        codes = [c for c in codes if not args or c in args]
+        print("upserted", fund(codes, full=codes))
     elif cmd == "news":
         pairs = sorted({(x["stockCode"], x["stockName"]) for _, x in today_codes()})
         print("upserted", news([p for p in pairs if not args or p[0] in args]))

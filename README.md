@@ -69,7 +69,7 @@ aws lambda update-function-code --function-name trading-signal-collect \
 
 | 리소스 | 이름 |
 |---|---|
-| Lambda | `trading-signal-collect` (python3.13/arm64, 300s, 256MB) |
+| Lambda | `trading-signal-collect` (python3.13/arm64, 900s, 256MB) |
 | 실행 역할 | `trading-signal-collect-role` |
 | 스케줄러 역할 | `trading-signal-scheduler-role` (해당 함수만 invoke) |
 | 스케줄 | `trading-signal-poll` — `cron(3,23,43 9-15 ? * MON-FRI *)` KST |
